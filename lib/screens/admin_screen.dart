@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../services/api_service.dart';
 import '../services/auth_service.dart';
+import '../services/socket_service.dart';
 
 import 'role_selection_screen.dart';
 
@@ -17,6 +18,7 @@ class AdminScreen extends StatefulWidget {
 class _AdminScreenState extends State<AdminScreen> {
   bool loading = true;
   bool refreshing = false;
+  bool socketConnected = false;
 
   Map<String, dynamic> statistics = {};
 
@@ -27,6 +29,9 @@ class _AdminScreenState extends State<AdminScreen> {
 
   Timer? _refreshTimer;
 
+  final SocketService _socketService =
+      SocketService();
+
   int selectedPage = 0;
 
   @override
@@ -34,6 +39,8 @@ class _AdminScreenState extends State<AdminScreen> {
     super.initState();
 
     loadAllData();
+
+    _connectSocket();
 
     _refreshTimer = Timer.periodic(
       const Duration(seconds: 5),
@@ -45,6 +52,78 @@ class _AdminScreenState extends State<AdminScreen> {
         }
       },
     );
+  }
+
+  /* =========================================================
+     SOCKET.IO
+  ========================================================= */
+
+  Future<void> _connectSocket() async {
+    final token =
+        await AuthService.getToken();
+
+    if (token == null ||
+        token.isEmpty) {
+      return;
+    }
+
+    _socketService.connect(
+      serverUrl:
+          'http://localhost:3000',
+      token: token,
+      role: 'admin',
+    );
+
+    _socketService.on(
+      'order_status_updated',
+      (data) {
+        if (!mounted) return;
+
+        debugPrint(
+          'Admin order update: $data',
+        );
+
+        loadAllData(
+          silent: true,
+        );
+
+        if (data is Map) {
+          final orderId =
+              data['order_id'];
+
+          final status =
+              data['status'];
+
+          if (status != null) {
+            showMessage(
+              'تحديث الطلب #$orderId: '
+              '${statusText(status)}',
+            );
+          }
+        }
+      },
+    );
+
+    _socketService.on(
+      'new_order',
+      (data) {
+        if (!mounted) return;
+
+        loadAllData(
+          silent: true,
+        );
+
+        showMessage(
+          'تم استلام طلب جديد',
+        );
+      },
+    );
+
+    if (mounted) {
+      setState(() {
+        socketConnected = true;
+      });
+    }
   }
 
   /* =========================================================
@@ -175,7 +254,8 @@ class _AdminScreenState extends State<AdminScreen> {
         restaurant['is_active'] == true ||
         restaurant['is_active'] == 1;
 
-    final newStatus = !currentStatus;
+    final newStatus =
+        !currentStatus;
 
     if (!newStatus) {
       final confirmed =
@@ -249,7 +329,8 @@ class _AdminScreenState extends State<AdminScreen> {
         driver['is_active'] == true ||
         driver['is_active'] == 1;
 
-    final newStatus = !currentStatus;
+    final newStatus =
+        !currentStatus;
 
     if (!newStatus) {
       final confirmed =
@@ -316,6 +397,8 @@ class _AdminScreenState extends State<AdminScreen> {
 
     _refreshTimer?.cancel();
 
+    _socketService.disconnect();
+
     await AuthService.logout();
 
     if (!mounted) return;
@@ -334,7 +417,8 @@ class _AdminScreenState extends State<AdminScreen> {
   ========================================================= */
 
   String _cleanError(Object error) {
-    String message = error.toString();
+    String message =
+        error.toString();
 
     if (message.startsWith(
       'Exception: ',
@@ -412,7 +496,8 @@ class _AdminScreenState extends State<AdminScreen> {
       barrierDismissible: false,
       builder: (_) {
         return const Center(
-          child: CircularProgressIndicator(),
+          child:
+              CircularProgressIndicator(),
         );
       },
     );
@@ -518,19 +603,23 @@ class _AdminScreenState extends State<AdminScreen> {
               width: double.infinity,
               padding:
                   const EdgeInsets.all(24),
-              child: const Column(
+              child: Column(
                 crossAxisAlignment:
                     CrossAxisAlignment.start,
                 children: [
-                  CircleAvatar(
+                  const CircleAvatar(
                     radius: 32,
                     child: Icon(
                       Icons.admin_panel_settings,
                       size: 35,
                     ),
                   ),
-                  SizedBox(height: 12),
-                  Text(
+
+                  const SizedBox(
+                    height: 12,
+                  ),
+
+                  const Text(
                     'HADROUG DELIVERY',
                     style: TextStyle(
                       fontSize: 19,
@@ -538,12 +627,56 @@ class _AdminScreenState extends State<AdminScreen> {
                           FontWeight.bold,
                     ),
                   ),
-                  SizedBox(height: 4),
-                  Text(
+
+                  const SizedBox(
+                    height: 4,
+                  ),
+
+                  const Text(
                     'لوحة الإدارة',
                     style: TextStyle(
                       color: Colors.grey,
                     ),
+                  ),
+
+                  const SizedBox(
+                    height: 12,
+                  ),
+
+                  Row(
+                    children: [
+                      Container(
+                        width: 9,
+                        height: 9,
+                        decoration:
+                            BoxDecoration(
+                          shape:
+                              BoxShape.circle,
+                          color:
+                              socketConnected
+                                  ? Colors.green
+                                  : Colors.red,
+                        ),
+                      ),
+
+                      const SizedBox(
+                        width: 7,
+                      ),
+
+                      Text(
+                        socketConnected
+                            ? 'Real-Time متصل'
+                            : 'Real-Time غير متصل',
+                        style:
+                            TextStyle(
+                          fontSize: 12,
+                          color:
+                              socketConnected
+                                  ? Colors.green
+                                  : Colors.red,
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),
@@ -564,13 +697,15 @@ class _AdminScreenState extends State<AdminScreen> {
             ),
 
             drawerItem(
-              icon: Icons.delivery_dining,
+              icon:
+                  Icons.delivery_dining,
               title: 'إدارة السائقين',
               index: 2,
             ),
 
             drawerItem(
-              icon: Icons.receipt_long,
+              icon:
+                  Icons.receipt_long,
               title: 'جميع الطلبات',
               index: 3,
             ),
@@ -580,7 +715,8 @@ class _AdminScreenState extends State<AdminScreen> {
             const Divider(),
 
             ListTile(
-              leading: const Icon(
+              leading:
+                  const Icon(
                 Icons.refresh,
               ),
               title: const Text(
@@ -596,7 +732,8 @@ class _AdminScreenState extends State<AdminScreen> {
             ),
 
             ListTile(
-              leading: const Icon(
+              leading:
+                  const Icon(
                 Icons.logout,
                 color: Colors.red,
               ),
@@ -661,11 +798,14 @@ class _AdminScreenState extends State<AdminScreen> {
             'لوحة التحكم',
             style: TextStyle(
               fontSize: 25,
-              fontWeight: FontWeight.bold,
+              fontWeight:
+                  FontWeight.bold,
             ),
           ),
 
-          const SizedBox(height: 6),
+          const SizedBox(
+            height: 6,
+          ),
 
           const Text(
             'نظرة مباشرة على نظام HADROUG DELIVERY',
@@ -674,7 +814,9 @@ class _AdminScreenState extends State<AdminScreen> {
             ),
           ),
 
-          const SizedBox(height: 20),
+          const SizedBox(
+            height: 20,
+          ),
 
           GridView.count(
             crossAxisCount: 2,
@@ -689,8 +831,10 @@ class _AdminScreenState extends State<AdminScreen> {
                 title: 'المطاعم',
                 value:
                     '${statistics['restaurants'] ?? 0}',
-                icon: Icons.restaurant,
+                icon:
+                    Icons.restaurant,
               ),
+
               statCard(
                 title: 'السائقون',
                 value:
@@ -698,12 +842,15 @@ class _AdminScreenState extends State<AdminScreen> {
                 icon:
                     Icons.delivery_dining,
               ),
+
               statCard(
-                title: 'السائقون المتصلون',
+                title:
+                    'السائقون المتصلون',
                 value:
                     '${statistics['online_drivers'] ?? 0}',
                 icon: Icons.wifi,
               ),
+
               statCard(
                 title: 'طلبات اليوم',
                 value:
@@ -711,17 +858,21 @@ class _AdminScreenState extends State<AdminScreen> {
                 icon:
                     Icons.shopping_bag,
               ),
+
               statCard(
-                title: 'إيرادات اليوم',
+                title:
+                    'إيرادات اليوم',
                 value: money(
                   statistics[
                       'today_revenue'],
                 ),
-                icon:
-                    Icons.account_balance_wallet,
+                icon: Icons
+                    .account_balance_wallet,
               ),
+
               statCard(
-                title: 'المستحقات',
+                title:
+                    'المستحقات',
                 value: money(
                   statistics[
                       'total_balance_due'],
@@ -732,19 +883,23 @@ class _AdminScreenState extends State<AdminScreen> {
             ],
           ),
 
-          const SizedBox(height: 25),
+          const SizedBox(
+            height: 25,
+          ),
 
           sectionTitle(
             'الطلبات النشطة',
             activeOrders.length,
           ),
 
-          const SizedBox(height: 10),
+          const SizedBox(
+            height: 10,
+          ),
 
           if (activeOrders.isEmpty)
             emptyCard(
-              icon:
-                  Icons.local_shipping_outlined,
+              icon: Icons
+                  .local_shipping_outlined,
               text:
                   'لا توجد طلبات نشطة حاليًا',
             )
@@ -773,11 +928,14 @@ class _AdminScreenState extends State<AdminScreen> {
             'إدارة المطاعم',
             style: TextStyle(
               fontSize: 25,
-              fontWeight: FontWeight.bold,
+              fontWeight:
+                  FontWeight.bold,
             ),
           ),
 
-          const SizedBox(height: 6),
+          const SizedBox(
+            height: 6,
+          ),
 
           Text(
             '${restaurants.length} مطعم',
@@ -786,7 +944,9 @@ class _AdminScreenState extends State<AdminScreen> {
             ),
           ),
 
-          const SizedBox(height: 18),
+          const SizedBox(
+            height: 18,
+          ),
 
           if (restaurants.isEmpty)
             emptyCard(
@@ -823,11 +983,14 @@ class _AdminScreenState extends State<AdminScreen> {
             'إدارة السائقين',
             style: TextStyle(
               fontSize: 25,
-              fontWeight: FontWeight.bold,
+              fontWeight:
+                  FontWeight.bold,
             ),
           ),
 
-          const SizedBox(height: 6),
+          const SizedBox(
+            height: 6,
+          ),
 
           Text(
             '${drivers.length} سائق',
@@ -836,7 +999,9 @@ class _AdminScreenState extends State<AdminScreen> {
             ),
           ),
 
-          const SizedBox(height: 18),
+          const SizedBox(
+            height: 18,
+          ),
 
           if (drivers.isEmpty)
             emptyCard(
@@ -874,11 +1039,14 @@ class _AdminScreenState extends State<AdminScreen> {
             'جميع الطلبات',
             style: TextStyle(
               fontSize: 25,
-              fontWeight: FontWeight.bold,
+              fontWeight:
+                  FontWeight.bold,
             ),
           ),
 
-          const SizedBox(height: 6),
+          const SizedBox(
+            height: 6,
+          ),
 
           Text(
             '${allOrders.length} طلب',
@@ -887,7 +1055,9 @@ class _AdminScreenState extends State<AdminScreen> {
             ),
           ),
 
-          const SizedBox(height: 18),
+          const SizedBox(
+            height: 18,
+          ),
 
           if (allOrders.isEmpty)
             emptyCard(
@@ -928,22 +1098,30 @@ class _AdminScreenState extends State<AdminScreen> {
               icon,
               size: 28,
             ),
+
             const Spacer(),
+
             Text(
               value,
-              style: const TextStyle(
+              style:
+                  const TextStyle(
                 fontSize: 20,
                 fontWeight:
                     FontWeight.bold,
               ),
             ),
-            const SizedBox(height: 4),
+
+            const SizedBox(
+              height: 4,
+            ),
+
             Text(
               title,
               maxLines: 1,
               overflow:
                   TextOverflow.ellipsis,
-              style: const TextStyle(
+              style:
+                  const TextStyle(
                 color: Colors.grey,
               ),
             ),
@@ -961,19 +1139,24 @@ class _AdminScreenState extends State<AdminScreen> {
     Map<String, dynamic> restaurant,
   ) {
     final active =
-        restaurant['is_active'] == true ||
-            restaurant['is_active'] == 1;
+        restaurant['is_active'] ==
+                true ||
+            restaurant['is_active'] ==
+                1;
 
     final name =
-        restaurant['name']?.toString() ??
+        restaurant['name']
+                ?.toString() ??
             'مطعم';
 
     final phone =
-        restaurant['phone']?.toString() ??
+        restaurant['phone']
+                ?.toString() ??
             'غير متوفر';
 
     final address =
-        restaurant['address']?.toString() ??
+        restaurant['address']
+                ?.toString() ??
             'غير متوفر';
 
     final balance =
@@ -993,13 +1176,15 @@ class _AdminScreenState extends State<AdminScreen> {
           children: [
             Row(
               children: [
-                CircleAvatar(
+                const CircleAvatar(
                   child: Icon(
                     Icons.restaurant,
                   ),
                 ),
 
-                const SizedBox(width: 12),
+                const SizedBox(
+                  width: 12,
+                ),
 
                 Expanded(
                   child: Column(
@@ -1016,6 +1201,7 @@ class _AdminScreenState extends State<AdminScreen> {
                               FontWeight.bold,
                         ),
                       ),
+
                       Text(
                         phone,
                         style:
@@ -1038,17 +1224,25 @@ class _AdminScreenState extends State<AdminScreen> {
               ],
             ),
 
-            const SizedBox(height: 14),
+            const SizedBox(
+              height: 14,
+            ),
 
             Row(
               crossAxisAlignment:
-                  CrossAxisAlignment.start,
+                  CrossAxisAlignment
+                      .start,
               children: [
                 const Icon(
-                  Icons.location_on_outlined,
+                  Icons
+                      .location_on_outlined,
                   size: 20,
                 ),
-                const SizedBox(width: 6),
+
+                const SizedBox(
+                  width: 6,
+                ),
+
                 Expanded(
                   child: Text(
                     address,
@@ -1057,15 +1251,22 @@ class _AdminScreenState extends State<AdminScreen> {
               ],
             ),
 
-            const SizedBox(height: 8),
+            const SizedBox(
+              height: 8,
+            ),
 
             Row(
               children: [
                 const Icon(
-                  Icons.payments_outlined,
+                  Icons
+                      .payments_outlined,
                   size: 20,
                 ),
-                const SizedBox(width: 6),
+
+                const SizedBox(
+                  width: 6,
+                ),
+
                 Text(
                   'المستحق: ${money(balance)}',
                   style:
@@ -1077,20 +1278,25 @@ class _AdminScreenState extends State<AdminScreen> {
               ],
             ),
 
-            const SizedBox(height: 14),
+            const SizedBox(
+              height: 14,
+            ),
 
             Row(
               children: [
                 Expanded(
                   child:
-                      OutlinedButton.icon(
+                      OutlinedButton
+                          .icon(
                     onPressed: () {
                       showRestaurantDetails(
                         restaurant,
                       );
                     },
-                    icon: const Icon(
-                      Icons.info_outline,
+                    icon:
+                        const Icon(
+                      Icons
+                          .info_outline,
                     ),
                     label:
                         const Text(
@@ -1099,11 +1305,14 @@ class _AdminScreenState extends State<AdminScreen> {
                   ),
                 ),
 
-                const SizedBox(width: 10),
+                const SizedBox(
+                  width: 10,
+                ),
 
                 Expanded(
                   child:
-                      ElevatedButton.icon(
+                      ElevatedButton
+                          .icon(
                     onPressed: () =>
                         updateRestaurantStatus(
                       restaurant,
@@ -1111,7 +1320,8 @@ class _AdminScreenState extends State<AdminScreen> {
                     icon: Icon(
                       active
                           ? Icons.block
-                          : Icons.check_circle,
+                          : Icons
+                              .check_circle,
                     ),
                     label: Text(
                       active
@@ -1136,27 +1346,36 @@ class _AdminScreenState extends State<AdminScreen> {
     Map<String, dynamic> driver,
   ) {
     final active =
-        driver['is_active'] == true ||
-            driver['is_active'] == 1;
+        driver['is_active'] ==
+                true ||
+            driver['is_active'] ==
+                1;
 
     final online =
-        driver['is_online'] == true ||
-            driver['is_online'] == 1;
+        driver['is_online'] ==
+                true ||
+            driver['is_online'] ==
+                1;
 
     final available =
-        driver['is_available'] == true ||
-            driver['is_available'] == 1;
+        driver['is_available'] ==
+                true ||
+            driver['is_available'] ==
+                1;
 
     final name =
-        driver['full_name']?.toString() ??
+        driver['full_name']
+                ?.toString() ??
             'سائق';
 
     final phone =
-        driver['phone']?.toString() ??
+        driver['phone']
+                ?.toString() ??
             'غير متوفر';
 
     final vehicle =
-        driver['vehicle_type']?.toString() ??
+        driver['vehicle_type']
+                ?.toString() ??
             'غير محدد';
 
     return Card(
@@ -1171,18 +1390,22 @@ class _AdminScreenState extends State<AdminScreen> {
           children: [
             Row(
               children: [
-                CircleAvatar(
+                const CircleAvatar(
                   child: Icon(
-                    Icons.delivery_dining,
+                    Icons
+                        .delivery_dining,
                   ),
                 ),
 
-                const SizedBox(width: 12),
+                const SizedBox(
+                  width: 12,
+                ),
 
                 Expanded(
                   child: Column(
                     crossAxisAlignment:
-                        CrossAxisAlignment.start,
+                        CrossAxisAlignment
+                            .start,
                     children: [
                       Text(
                         name,
@@ -1193,6 +1416,7 @@ class _AdminScreenState extends State<AdminScreen> {
                               FontWeight.bold,
                         ),
                       ),
+
                       Text(
                         phone,
                         style:
@@ -1215,18 +1439,25 @@ class _AdminScreenState extends State<AdminScreen> {
               ],
             ),
 
-            const SizedBox(height: 14),
+            const SizedBox(
+              height: 14,
+            ),
 
             Row(
               children: [
                 Expanded(
                   child: infoBox(
-                    icon: Icons.two_wheeler,
+                    icon:
+                        Icons.two_wheeler,
                     title: 'المركبة',
                     value: vehicle,
                   ),
                 ),
-                const SizedBox(width: 8),
+
+                const SizedBox(
+                  width: 8,
+                ),
+
                 Expanded(
                   child: infoBox(
                     icon: Icons.wifi,
@@ -1239,25 +1470,33 @@ class _AdminScreenState extends State<AdminScreen> {
               ],
             ),
 
-            const SizedBox(height: 8),
+            const SizedBox(
+              height: 8,
+            ),
 
             Row(
               children: [
                 Expanded(
                   child: infoBox(
-                    icon: Icons.check_circle,
+                    icon: Icons
+                        .check_circle,
                     title: 'متاح',
                     value: available
                         ? 'نعم'
                         : 'لا',
                   ),
                 ),
-                const SizedBox(width: 8),
+
+                const SizedBox(
+                  width: 8,
+                ),
+
                 Expanded(
                   child: infoBox(
-                    icon:
-                        Icons.shopping_bag,
-                    title: 'طلبات مكتملة',
+                    icon: Icons
+                        .shopping_bag,
+                    title:
+                        'طلبات مكتملة',
                     value:
                         '${driver['total_completed_orders'] ?? 0}',
                   ),
@@ -1265,13 +1504,16 @@ class _AdminScreenState extends State<AdminScreen> {
               ],
             ),
 
-            const SizedBox(height: 14),
+            const SizedBox(
+              height: 14,
+            ),
 
             Row(
               children: [
                 Expanded(
                   child:
-                      ElevatedButton.icon(
+                      ElevatedButton
+                          .icon(
                     onPressed: () =>
                         updateDriverStatus(
                       driver,
@@ -1279,7 +1521,8 @@ class _AdminScreenState extends State<AdminScreen> {
                     icon: Icon(
                       active
                           ? Icons.block
-                          : Icons.check_circle,
+                          : Icons
+                              .check_circle,
                     ),
                     label: Text(
                       active
@@ -1473,7 +1716,9 @@ class _AdminScreenState extends State<AdminScreen> {
                   ),
                 ),
 
-                const SizedBox(height: 18),
+                const SizedBox(
+                  height: 18,
+                ),
 
                 infoRow(
                   Icons.phone,
@@ -1508,7 +1753,9 @@ class _AdminScreenState extends State<AdminScreen> {
                   ),
                 ),
 
-                const SizedBox(height: 14),
+                const SizedBox(
+                  height: 14,
+                ),
 
                 statusBadge(
                   active
@@ -1519,7 +1766,9 @@ class _AdminScreenState extends State<AdminScreen> {
                       : Colors.red,
                 ),
 
-                const SizedBox(height: 20),
+                const SizedBox(
+                  height: 20,
+                ),
               ],
             ),
           ),
@@ -1547,7 +1796,11 @@ class _AdminScreenState extends State<AdminScreen> {
                 FontWeight.bold,
           ),
         ),
-        const SizedBox(width: 8),
+
+        const SizedBox(
+          width: 8,
+        ),
+
         CircleAvatar(
           radius: 12,
           child: Text(
@@ -1577,7 +1830,11 @@ class _AdminScreenState extends State<AdminScreen> {
               size: 50,
               color: Colors.grey,
             ),
-            const SizedBox(height: 12),
+
+            const SizedBox(
+              height: 12,
+            ),
+
             Text(
               text,
               textAlign:
@@ -1640,7 +1897,11 @@ class _AdminScreenState extends State<AdminScreen> {
             icon,
             size: 19,
           ),
-          const SizedBox(width: 8),
+
+          const SizedBox(
+            width: 8,
+          ),
+
           Text(
             '$title: ',
             style:
@@ -1649,6 +1910,7 @@ class _AdminScreenState extends State<AdminScreen> {
                   FontWeight.w600,
             ),
           ),
+
           Expanded(
             child: Text(value),
           ),
@@ -1680,11 +1942,16 @@ class _AdminScreenState extends State<AdminScreen> {
             icon,
             size: 20,
           ),
-          const SizedBox(width: 7),
+
+          const SizedBox(
+            width: 7,
+          ),
+
           Expanded(
             child: Column(
               crossAxisAlignment:
-                  CrossAxisAlignment.start,
+                  CrossAxisAlignment
+                      .start,
               children: [
                 Text(
                   title,
@@ -1694,6 +1961,7 @@ class _AdminScreenState extends State<AdminScreen> {
                     color: Colors.grey,
                   ),
                 ),
+
                 Text(
                   value,
                   maxLines: 1,
@@ -1726,13 +1994,13 @@ class _AdminScreenState extends State<AdminScreen> {
         title: const Text(
           'لوحة الإدارة',
         ),
+
         actions: [
           if (refreshing)
             const Padding(
               padding:
                   EdgeInsets.all(16),
-              child:
-                  SizedBox(
+              child: SizedBox(
                 width: 18,
                 height: 18,
                 child:
@@ -1770,9 +2038,16 @@ class _AdminScreenState extends State<AdminScreen> {
     );
   }
 
+  /* =========================================================
+     DISPOSE
+  ========================================================= */
+
   @override
   void dispose() {
     _refreshTimer?.cancel();
+
+    _socketService.disconnect();
+
     super.dispose();
   }
 }

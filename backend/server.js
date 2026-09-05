@@ -1,3 +1,4 @@
+
 require("dotenv").config();
 
 const express = require("express");
@@ -11,6 +12,7 @@ const authRoutes = require("./routes/auth.routes");
 const restaurantRoutes = require("./routes/restaurant.routes");
 const orderRoutes = require("./routes/order.routes");
 const driverRoutes = require("./routes/driver.routes");
+const adminRoutes = require("./routes/admin.routes");
 
 const { initializeSocket } = require("./socket/socket");
 
@@ -48,6 +50,8 @@ app.use("/api/restaurant", restaurantRoutes);
 app.use("/api/orders", orderRoutes);
 
 app.use("/api/driver", driverRoutes);
+
+app.use("/api/admin", adminRoutes);
 
 // =========================================================
 // ERROR HANDLER

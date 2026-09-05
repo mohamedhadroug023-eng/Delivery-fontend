@@ -4,19 +4,21 @@ const express = require("express");
 const cors = require("cors");
 const helmet = require("helmet");
 
+const authRoutes = require("./routes/auth.routes");
+
 const app = express();
 
-// ===============================
-// Middleware
-// ===============================
+// =========================================================
+// MIDDLEWARE
+// =========================================================
 
 app.use(cors());
 app.use(helmet());
 app.use(express.json({ limit: "100kb" }));
 
-// ===============================
-// Health Check
-// ===============================
+// =========================================================
+// ROUTES
+// =========================================================
 
 app.get("/", (req, res) => {
   res.json({
@@ -25,12 +27,16 @@ app.get("/", (req, res) => {
   });
 });
 
-// ===============================
-// Server
-// ===============================
+app.use("/api/auth", authRoutes);
+
+// =========================================================
+// SERVER
+// =========================================================
 
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
-  console.log(`HADROUG DELIVERY Backend running on port ${PORT}`);
+  console.log(
+    `HADROUG DELIVERY Backend running on port ${PORT}`
+  );
 });

@@ -2,6 +2,7 @@ const express = require("express");
 
 const {
   getProfile,
+  getOrders,
   updateOnlineStatus,
   updateLocation,
   acceptOrderOffer,
@@ -25,6 +26,18 @@ router.get(
   authenticate,
   authorize("driver"),
   getProfile
+);
+
+// =========================================================
+// DRIVER ORDERS
+// =========================================================
+
+// GET /api/driver/orders
+router.get(
+  "/orders",
+  authenticate,
+  authorize("driver"),
+  getOrders
 );
 
 // =========================================================

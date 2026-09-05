@@ -20,7 +20,6 @@ const OFFER_DURATION_SECONDS = 20;
 // =========================================================
 
 async function findNearestDriver(orderId) {
-
   const [orders] = await pool.execute(
     `
     SELECT
@@ -71,7 +70,8 @@ async function findNearestDriver(orderId) {
 
   const [previousOffers] = await pool.execute(
     `
-    SELECT DISTINCT driver_id
+    SELECT DISTINCT
+      driver_id
     FROM order_offers
     WHERE order_id = ?
     `,
@@ -109,6 +109,10 @@ async function findNearestDriver(orderId) {
   if (drivers.length === 0) {
     return null;
   }
+
+  // =======================================================
+  // CALCULATE DISTANCE
+  // =======================================================
 
   const driversWithDistance = drivers
     .map((driver) => ({
@@ -151,7 +155,6 @@ async function findNearestDriver(orderId) {
 // =========================================================
 
 async function sendOrderOffer(orderId) {
-
   const driver =
     await findNearestDriver(orderId);
 
@@ -166,13 +169,20 @@ async function sendOrderOffer(orderId) {
     await pool.getConnection();
 
   try {
-
     await connection.beginTransaction();
+
+    // =====================================================
+    // OFFER EXPIRATION
+    // =====================================================
 
     const expiresAt = new Date(
       Date.now() +
       OFFER_DURATION_SECONDS * 1000
     );
+
+    // =====================================================
+    // ASSIGN CURRENT OFFER
+    // =====================================================
 
     const [result] =
       await connection.execute(
@@ -195,14 +205,18 @@ async function sendOrderOffer(orderId) {
       );
 
     if (result.affectedRows === 0) {
-
       await connection.rollback();
 
       return {
         success: false,
-        message: "Order is no longer available"
+        message:
+          "Order is no longer available"
       };
     }
+
+    // =====================================================
+    // CREATE OFFER RECORD
+    // =====================================================
 
     await connection.execute(
       `
@@ -210,10 +224,18 @@ async function sendOrderOffer(orderId) {
         order_id,
         driver_id,
         distance_to_restaurant,
+        offered_at,
         expires_at,
         status
       )
-      VALUES (?, ?, ?, ?, 'offered')
+      VALUES (
+        ?,
+        ?,
+        ?,
+        CURRENT_TIMESTAMP,
+        ?,
+        'offered'
+      )
       `,
       [
         orderId,
@@ -222,6 +244,10 @@ async function sendOrderOffer(orderId) {
         expiresAt
       ]
     );
+
+    // =====================================================
+    // CREATE EVENT
+    // =====================================================
 
     await connection.execute(
       `
@@ -244,23 +270,41 @@ async function sendOrderOffer(orderId) {
     await connection.commit();
 
     // =====================================================
-    // GET ORDER DETAILS
+    // GET COMPLETE ORDER DETAILS
     // =====================================================
 
     const [orderRows] =
       await pool.execute(
         `
         SELECT
-          id,
-          restaurant_id,
-          customer_address,
-          customer_latitude,
-          customer_longitude,
-          food_amount,
-          driver_fee,
-          offer_expires_at
-        FROM orders
-        WHERE id = ?
+          o.id,
+          o.restaurant_id,
+
+          o.customer_name,
+          o.customer_phone,
+          o.customer_address,
+          o.customer_latitude,
+          o.customer_longitude,
+
+          o.food_amount,
+          o.hadroug_fee,
+          o.driver_fee,
+
+          o.status,
+          o.offer_expires_at,
+
+          r.name AS restaurant_name,
+          r.address AS restaurant_address,
+          r.latitude AS restaurant_latitude,
+          r.longitude AS restaurant_longitude
+
+        FROM orders o
+
+        INNER JOIN restaurants r
+          ON r.id = o.restaurant_id
+
+        WHERE o.id = ?
+
         LIMIT 1
         `,
         [orderId]
@@ -271,36 +315,47 @@ async function sendOrderOffer(orderId) {
     // =====================================================
 
     if (orderRows.length > 0) {
-
       const order = orderRows[0];
 
       sendOrderOfferNotification(
         driver.id,
         {
           ...order,
+
           expires_at:
             order.offer_expires_at
         }
       );
     }
 
+    // =====================================================
+    // RESULT
+    // =====================================================
+
     return {
       success: true,
+
       driverId: driver.id,
+
+      distance:
+        driver.distance,
+
       expiresAt
     };
 
   } catch (error) {
-
     await connection.rollback();
 
     throw error;
 
   } finally {
-
     connection.release();
   }
 }
+
+// =========================================================
+// EXPORTS
+// =========================================================
 
 module.exports = {
   findNearestDriver,

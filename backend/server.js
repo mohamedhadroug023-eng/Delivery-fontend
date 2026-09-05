@@ -7,6 +7,7 @@ const helmet = require("helmet");
 const authRoutes = require("./routes/auth.routes");
 const restaurantRoutes = require("./routes/restaurant.routes");
 const orderRoutes = require("./routes/order.routes");
+const driverRoutes = require("./routes/driver.routes");
 
 const errorHandler = require("./middleware/error.middleware");
 
@@ -37,6 +38,8 @@ app.use("/api/restaurant", restaurantRoutes);
 
 app.use("/api/orders", orderRoutes);
 
+app.use("/api/driver", driverRoutes);
+
 // =========================================================
 // ERROR HANDLER
 // =========================================================
@@ -51,9 +54,6 @@ const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
   console.log(
-    `HADROUG DELIVERY Backend running on port ${PORT}`
-  );
-});  console.log(
     `HADROUG DELIVERY Backend running on port ${PORT}`
   );
 });

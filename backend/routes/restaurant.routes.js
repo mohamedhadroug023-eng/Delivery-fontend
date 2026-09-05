@@ -2,7 +2,8 @@ const express = require("express");
 
 const {
   getProfile,
-  getOrders
+  getOrders,
+  verifyPickupOtp
 } = require("../controllers/restaurant.controller");
 
 const {
@@ -12,11 +13,11 @@ const {
 
 const router = express.Router();
 
+
 // =========================================================
 // RESTAURANT PROFILE
 // =========================================================
 
-// GET /api/restaurant/profile
 router.get(
   "/profile",
   authenticate,
@@ -24,16 +25,29 @@ router.get(
   getProfile
 );
 
+
 // =========================================================
 // RESTAURANT ORDERS
 // =========================================================
 
-// GET /api/restaurant/orders
 router.get(
   "/orders",
   authenticate,
   authorize("restaurant"),
   getOrders
 );
+
+
+// =========================================================
+// VERIFY PICKUP OTP
+// =========================================================
+
+router.post(
+  "/orders/verify-pickup",
+  authenticate,
+  authorize("restaurant"),
+  verifyPickupOtp
+);
+
 
 module.exports = router;

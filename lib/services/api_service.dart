@@ -5,7 +5,7 @@ import 'package:http/http.dart' as http;
 import 'auth_service.dart';
 
 class ApiService {
-  // سيتم تغييره إلى IP الحاسوب الذي يشغل الـ Backend
+  // سيتم تغييره لاحقًا إلى IP الحاسوب الذي يشغل الـ Backend
   static const String baseUrl =
       'http://localhost:3000/api';
 
@@ -69,6 +69,23 @@ class ApiService {
     Map<String, dynamic> body,
   ) async {
     final response = await http.put(
+      Uri.parse('$baseUrl$endpoint'),
+      headers: await _headers(),
+      body: jsonEncode(body),
+    );
+
+    return _handleResponse(response);
+  }
+
+  // =========================================================
+  // PATCH
+  // =========================================================
+
+  static Future<Map<String, dynamic>> patch(
+    String endpoint,
+    Map<String, dynamic> body,
+  ) async {
+    final response = await http.patch(
       Uri.parse('$baseUrl$endpoint'),
       headers: await _headers(),
       body: jsonEncode(body),

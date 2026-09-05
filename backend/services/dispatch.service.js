@@ -9,7 +9,7 @@ const {
 } = require("./notification.service");
 
 // =========================================================
-// DISPATCH CONFIGURATION
+// CONFIGURATION
 // =========================================================
 
 const MAX_DISTANCE_KM = 2.5;
@@ -65,6 +65,28 @@ async function findNearestDriver(orderId) {
 
   const restaurant = restaurants[0];
 
+  // =======================================================
+  // DRIVERS WHO ALREADY RECEIVED THIS ORDER
+  // =======================================================
+
+  const [previousOffers] = await pool.execute(
+    `
+    SELECT DISTINCT driver_id
+    FROM order_offers
+    WHERE order_id = ?
+    `,
+    [orderId]
+  );
+
+  const excludedDriverIds =
+    previousOffers.map(
+      (offer) => Number(offer.driver_id)
+    );
+
+  // =======================================================
+  // FIND AVAILABLE DRIVERS
+  // =======================================================
+
   const [drivers] = await pool.execute(
     `
     SELECT
@@ -105,6 +127,13 @@ async function findNearestDriver(orderId) {
         driver.distance <= MAX_DISTANCE_KM
     )
 
+    .filter(
+      (driver) =>
+        !excludedDriverIds.includes(
+          Number(driver.id)
+        )
+    )
+
     .sort(
       (a, b) =>
         a.distance - b.distance
@@ -127,7 +156,6 @@ async function sendOrderOffer(orderId) {
     await findNearestDriver(orderId);
 
   if (!driver) {
-
     return {
       success: false,
       message: "No available driver found"
@@ -150,20 +178,13 @@ async function sendOrderOffer(orderId) {
       await connection.execute(
         `
         UPDATE orders
-
         SET
           status = 'offered',
           current_offer_driver_id = ?,
           offer_expires_at = ?
-
         WHERE
           id = ?
-
-          AND status IN (
-            'pending',
-            'dispatching'
-          )
-
+          AND status IN ('pending', 'dispatching')
           AND current_offer_driver_id IS NULL
         `,
         [
@@ -192,14 +213,7 @@ async function sendOrderOffer(orderId) {
         expires_at,
         status
       )
-
-      VALUES (
-        ?,
-        ?,
-        ?,
-        ?,
-        'offered'
-      )
+      VALUES (?, ?, ?, ?, 'offered')
       `,
       [
         orderId,
@@ -217,13 +231,7 @@ async function sendOrderOffer(orderId) {
         new_status,
         description
       )
-
-      VALUES (
-        ?,
-        ?,
-        ?,
-        ?
-      )
+      VALUES (?, ?, ?, ?)
       `,
       [
         orderId,
@@ -236,7 +244,7 @@ async function sendOrderOffer(orderId) {
     await connection.commit();
 
     // =====================================================
-    // GET ORDER DETAILS FOR SOCKET NOTIFICATION
+    // GET ORDER DETAILS
     // =====================================================
 
     const [orderRows] =
@@ -251,15 +259,16 @@ async function sendOrderOffer(orderId) {
           food_amount,
           driver_fee,
           offer_expires_at
-
         FROM orders
-
         WHERE id = ?
-
         LIMIT 1
         `,
         [orderId]
       );
+
+    // =====================================================
+    // SEND SOCKET NOTIFICATION
+    // =====================================================
 
     if (orderRows.length > 0) {
 
@@ -274,10 +283,6 @@ async function sendOrderOffer(orderId) {
         }
       );
     }
-
-    // =====================================================
-    // RESULT
-    // =====================================================
 
     return {
       success: true,

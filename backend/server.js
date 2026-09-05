@@ -1,10 +1,11 @@
 require("dotenv").config();
-const errorHandler = require("./middleware/error.middleware");
+
 const express = require("express");
 const cors = require("cors");
 const helmet = require("helmet");
 
 const authRoutes = require("./routes/auth.routes");
+const errorHandler = require("./middleware/error.middleware");
 
 const app = express();
 
@@ -28,6 +29,12 @@ app.get("/", (req, res) => {
 });
 
 app.use("/api/auth", authRoutes);
+
+// =========================================================
+// ERROR HANDLER
+// =========================================================
+
+app.use(errorHandler);
 
 // =========================================================
 // SERVER

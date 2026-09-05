@@ -5,6 +5,7 @@ const http = require("http");
 const cors = require("cors");
 const helmet = require("helmet");
 const { Server } = require("socket.io");
+const cron = require("node-cron");
 
 const authRoutes = require("./routes/auth.routes");
 const restaurantRoutes = require("./routes/restaurant.routes");
@@ -12,6 +13,10 @@ const orderRoutes = require("./routes/order.routes");
 const driverRoutes = require("./routes/driver.routes");
 
 const { initializeSocket } = require("./socket/socket");
+
+const {
+  processExpiredOffers
+} = require("./services/offer-expiration.service");
 
 const errorHandler = require("./middleware/error.middleware");
 
@@ -69,6 +74,21 @@ const io = new Server(server, {
 });
 
 initializeSocket(io);
+
+// =========================================================
+// EXPIRED OFFERS WORKER
+// =========================================================
+
+cron.schedule("*/2 * * * * *", async () => {
+  try {
+    await processExpiredOffers();
+  } catch (error) {
+    console.error(
+      "Expired offers worker error:",
+      error
+    );
+  }
+});
 
 // =========================================================
 // START SERVER

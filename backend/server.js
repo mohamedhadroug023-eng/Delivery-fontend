@@ -1,13 +1,17 @@
 require("dotenv").config();
 
 const express = require("express");
+const http = require("http");
 const cors = require("cors");
 const helmet = require("helmet");
+const { Server } = require("socket.io");
 
 const authRoutes = require("./routes/auth.routes");
 const restaurantRoutes = require("./routes/restaurant.routes");
 const orderRoutes = require("./routes/order.routes");
 const driverRoutes = require("./routes/driver.routes");
+
+const { initializeSocket } = require("./socket/socket");
 
 const errorHandler = require("./middleware/error.middleware");
 
@@ -47,13 +51,35 @@ app.use("/api/driver", driverRoutes);
 app.use(errorHandler);
 
 // =========================================================
-// SERVER
+// HTTP SERVER
 // =========================================================
 
 const PORT = process.env.PORT || 3000;
 
-app.listen(PORT, () => {
+const server = http.createServer(app);
+
+// =========================================================
+// SOCKET.IO
+// =========================================================
+
+const io = new Server(server, {
+  cors: {
+    origin: "*"
+  }
+});
+
+initializeSocket(io);
+
+// =========================================================
+// START SERVER
+// =========================================================
+
+server.listen(PORT, () => {
   console.log(
     `HADROUG DELIVERY Backend running on port ${PORT}`
+  );
+
+  console.log(
+    `Socket.IO server is ready`
   );
 });

@@ -41,11 +41,9 @@ async function getProfile(req, res, next) {
       });
     }
 
-    const driver = rows[0];
-
     return res.status(200).json({
       success: true,
-      driver
+      driver: rows[0]
     });
 
   } catch (error) {
@@ -100,6 +98,7 @@ async function getOrders(req, res, next) {
 
         o.created_at,
         o.accepted_at,
+        o.pickup_verified_at,
         o.picked_up_at,
         o.delivered_at,
         o.cancelled_at,
@@ -330,6 +329,7 @@ async function acceptOrderOffer(req, res, next) {
         FROM drivers
         WHERE user_id = ?
         LIMIT 1
+        FOR UPDATE
         `,
         [req.user.id]
       );
@@ -343,6 +343,18 @@ async function acceptOrderOffer(req, res, next) {
 
     const driver = drivers[0];
     const driverId = driver.id;
+
+    if (
+      !driver.is_online ||
+      !driver.is_available ||
+      Number(driver.current_orders_count) > 0
+    ) {
+      return res.status(409).json({
+        success: false,
+        message:
+          "Driver is not available to accept this order"
+      });
+    }
 
     await connection.beginTransaction();
 
@@ -463,15 +475,17 @@ async function acceptOrderOffer(req, res, next) {
       `
       INSERT INTO order_events (
         order_id,
+        actor_user_id,
         event_type,
         old_status,
         new_status,
         description
       )
-      VALUES (?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?)
       `,
       [
         order_id,
+        req.user.id,
         "order_accepted",
         "offered",
         "accepted",
@@ -483,7 +497,8 @@ async function acceptOrderOffer(req, res, next) {
 
     return res.status(200).json({
       success: true,
-      message: "Order accepted successfully",
+      message:
+        "Order accepted successfully",
       order_id: order_id
     });
 
@@ -616,15 +631,17 @@ async function rejectOrderOffer(req, res, next) {
         `
         INSERT INTO order_events (
           order_id,
+          actor_user_id,
           event_type,
           old_status,
           new_status,
           description
         )
-        VALUES (?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?)
         `,
         [
           order_id,
+          req.user.id,
           "driver_offer_rejected",
           "offered",
           "dispatching",
@@ -642,7 +659,6 @@ async function rejectOrderOffer(req, res, next) {
       connection.release();
     }
 
-    /* Send the order to the next driver */
     try {
       await sendOrderOffer(order_id);
     } catch (error) {
@@ -654,11 +670,505 @@ async function rejectOrderOffer(req, res, next) {
 
     return res.status(200).json({
       success: true,
-      message: "Order rejected successfully"
+      message:
+        "Order rejected successfully"
     });
 
   } catch (error) {
     next(error);
+  }
+}
+
+
+/* =========================================================
+   DRIVER ARRIVED AT RESTAURANT
+========================================================= */
+
+async function arriveAtRestaurant(req, res, next) {
+  const connection =
+    await pool.getConnection();
+
+  try {
+    const { order_id } = req.body;
+
+    if (!order_id) {
+      return res.status(400).json({
+        success: false,
+        message: "order_id is required"
+      });
+    }
+
+    const [drivers] =
+      await connection.execute(
+        `
+        SELECT id
+        FROM drivers
+        WHERE user_id = ?
+        LIMIT 1
+        `,
+        [req.user.id]
+      );
+
+    if (drivers.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "Driver profile not found"
+      });
+    }
+
+    const driverId = drivers[0].id;
+
+    await connection.beginTransaction();
+
+    const [orders] =
+      await connection.execute(
+        `
+        SELECT
+          id,
+          driver_id,
+          status
+        FROM orders
+        WHERE id = ?
+        LIMIT 1
+        FOR UPDATE
+        `,
+        [order_id]
+      );
+
+    if (orders.length === 0) {
+      await connection.rollback();
+
+      return res.status(404).json({
+        success: false,
+        message: "Order not found"
+      });
+    }
+
+    const order = orders[0];
+
+    if (
+      Number(order.driver_id) !==
+      Number(driverId)
+    ) {
+      await connection.rollback();
+
+      return res.status(403).json({
+        success: false,
+        message:
+          "This order does not belong to you"
+      });
+    }
+
+    if (order.status !== "accepted") {
+      await connection.rollback();
+
+      return res.status(409).json({
+        success: false,
+        message:
+          "Order cannot be marked as arrived"
+      });
+    }
+
+    await connection.execute(
+      `
+      UPDATE orders
+      SET
+        status = 'driver_arrived'
+      WHERE id = ?
+      `,
+      [order_id]
+    );
+
+    await connection.execute(
+      `
+      INSERT INTO order_events (
+        order_id,
+        actor_user_id,
+        event_type,
+        old_status,
+        new_status,
+        description
+      )
+      VALUES (?, ?, ?, ?, ?, ?)
+      `,
+      [
+        order_id,
+        req.user.id,
+        "driver_arrived",
+        "accepted",
+        "driver_arrived",
+        `Driver ${driverId} arrived at restaurant`
+      ]
+    );
+
+    await connection.commit();
+
+    return res.status(200).json({
+      success: true,
+      message:
+        "Driver arrival recorded",
+      order_id
+    });
+
+  } catch (error) {
+    try {
+      await connection.rollback();
+    } catch (_) {}
+
+    next(error);
+
+  } finally {
+    connection.release();
+  }
+}
+
+
+/* =========================================================
+   START DELIVERY
+========================================================= */
+
+async function startDelivery(req, res, next) {
+  const connection =
+    await pool.getConnection();
+
+  try {
+    const { order_id } = req.body;
+
+    if (!order_id) {
+      return res.status(400).json({
+        success: false,
+        message: "order_id is required"
+      });
+    }
+
+    const [drivers] =
+      await connection.execute(
+        `
+        SELECT id
+        FROM drivers
+        WHERE user_id = ?
+        LIMIT 1
+        `,
+        [req.user.id]
+      );
+
+    if (drivers.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "Driver profile not found"
+      });
+    }
+
+    const driverId = drivers[0].id;
+
+    await connection.beginTransaction();
+
+    const [orders] =
+      await connection.execute(
+        `
+        SELECT
+          id,
+          driver_id,
+          status
+        FROM orders
+        WHERE id = ?
+        LIMIT 1
+        FOR UPDATE
+        `,
+        [order_id]
+      );
+
+    if (orders.length === 0) {
+      await connection.rollback();
+
+      return res.status(404).json({
+        success: false,
+        message: "Order not found"
+      });
+    }
+
+    const order = orders[0];
+
+    if (
+      Number(order.driver_id) !==
+      Number(driverId)
+    ) {
+      await connection.rollback();
+
+      return res.status(403).json({
+        success: false,
+        message:
+          "This order does not belong to you"
+      });
+    }
+
+    /*
+      IMPORTANT:
+      The order must first be verified by OTP
+      and become "picked_up".
+
+      OTP verification will be added in the
+      next backend step.
+    */
+
+    if (order.status !== "picked_up") {
+      await connection.rollback();
+
+      return res.status(409).json({
+        success: false,
+        message:
+          "Order must be picked up before starting delivery"
+      });
+    }
+
+    await connection.execute(
+      `
+      UPDATE orders
+      SET
+        status = 'delivering'
+      WHERE id = ?
+      `,
+      [order_id]
+    );
+
+    await connection.execute(
+      `
+      INSERT INTO order_events (
+        order_id,
+        actor_user_id,
+        event_type,
+        old_status,
+        new_status,
+        description
+      )
+      VALUES (?, ?, ?, ?, ?, ?)
+      `,
+      [
+        order_id,
+        req.user.id,
+        "delivery_started",
+        "picked_up",
+        "delivering",
+        `Driver ${driverId} started delivery`
+      ]
+    );
+
+    await connection.commit();
+
+    return res.status(200).json({
+      success: true,
+      message:
+        "Delivery started successfully",
+      order_id
+    });
+
+  } catch (error) {
+    try {
+      await connection.rollback();
+    } catch (_) {}
+
+    next(error);
+
+  } finally {
+    connection.release();
+  }
+}
+
+
+/* =========================================================
+   COMPLETE DELIVERY
+========================================================= */
+
+async function completeDelivery(req, res, next) {
+  const connection =
+    await pool.getConnection();
+
+  try {
+    const { order_id } = req.body;
+
+    if (!order_id) {
+      return res.status(400).json({
+        success: false,
+        message: "order_id is required"
+      });
+    }
+
+    const [drivers] =
+      await connection.execute(
+        `
+        SELECT
+          id,
+          current_orders_count
+        FROM drivers
+        WHERE user_id = ?
+        LIMIT 1
+        FOR UPDATE
+        `,
+        [req.user.id]
+      );
+
+    if (drivers.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "Driver profile not found"
+      });
+    }
+
+    const driver = drivers[0];
+    const driverId = driver.id;
+
+    await connection.beginTransaction();
+
+    const [orders] =
+      await connection.execute(
+        `
+        SELECT
+          id,
+          driver_id,
+          status,
+          driver_fee
+        FROM orders
+        WHERE id = ?
+        LIMIT 1
+        FOR UPDATE
+        `,
+        [order_id]
+      );
+
+    if (orders.length === 0) {
+      await connection.rollback();
+
+      return res.status(404).json({
+        success: false,
+        message: "Order not found"
+      });
+    }
+
+    const order = orders[0];
+
+    if (
+      Number(order.driver_id) !==
+      Number(driverId)
+    ) {
+      await connection.rollback();
+
+      return res.status(403).json({
+        success: false,
+        message:
+          "This order does not belong to you"
+      });
+    }
+
+    if (order.status !== "delivering") {
+      await connection.rollback();
+
+      return res.status(409).json({
+        success: false,
+        message:
+          "Order is not currently being delivered"
+      });
+    }
+
+    const driverFee =
+      Number(order.driver_fee || 0);
+
+    await connection.execute(
+      `
+      UPDATE orders
+      SET
+        status = 'delivered',
+        delivered_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+      `,
+      [order_id]
+    );
+
+    await connection.execute(
+      `
+      UPDATE drivers
+      SET
+        current_orders_count =
+          CASE
+            WHEN current_orders_count > 0
+            THEN current_orders_count - 1
+            ELSE 0
+          END,
+        total_completed_orders =
+          total_completed_orders + 1,
+        is_available = TRUE
+      WHERE id = ?
+      `,
+      [driverId]
+    );
+
+    if (driverFee > 0) {
+      await connection.execute(
+        `
+        INSERT INTO transactions (
+          order_id,
+          driver_id,
+          type,
+          amount,
+          description
+        )
+        VALUES (
+          ?,
+          ?,
+          'driver_income',
+          ?,
+          ?
+        )
+        `,
+        [
+          order_id,
+          driverId,
+          driverFee,
+          "Driver delivery income"
+        ]
+      );
+    }
+
+    await connection.execute(
+      `
+      INSERT INTO order_events (
+        order_id,
+        actor_user_id,
+        event_type,
+        old_status,
+        new_status,
+        description
+      )
+      VALUES (?, ?, ?, ?, ?, ?)
+      `,
+      [
+        order_id,
+        req.user.id,
+        "order_delivered",
+        "delivering",
+        "delivered",
+        `Driver ${driverId} completed order`
+      ]
+    );
+
+    await connection.commit();
+
+    return res.status(200).json({
+      success: true,
+      message:
+        "Order delivered successfully",
+      order_id,
+      driver_fee: driverFee
+    });
+
+  } catch (error) {
+    try {
+      await connection.rollback();
+    } catch (_) {}
+
+    next(error);
+
+  } finally {
+    connection.release();
   }
 }
 
@@ -673,5 +1183,8 @@ module.exports = {
   updateOnlineStatus,
   updateLocation,
   acceptOrderOffer,
-  rejectOrderOffer
+  rejectOrderOffer,
+  arriveAtRestaurant,
+  startDelivery,
+  completeDelivery
 };

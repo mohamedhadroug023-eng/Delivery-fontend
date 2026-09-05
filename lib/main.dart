@@ -31,8 +31,6 @@ class HadrougDeliveryApp extends StatelessWidget {
       theme: ThemeData(
         useMaterial3: true,
 
-        fontFamily: 'Arial',
-
         colorScheme: ColorScheme.fromSeed(
           seedColor: primaryOrange,
           brightness: Brightness.light,
@@ -62,37 +60,47 @@ class HadrougDeliveryApp extends StatelessWidget {
           ),
 
           border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(14),
-            borderSide: const BorderSide(
+            borderRadius: BorderRadius.all(
+              Radius.circular(14),
+            ),
+            borderSide: BorderSide(
               color: Color(0xFFE0E0E0),
             ),
           ),
 
           enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(14),
-            borderSide: const BorderSide(
+            borderRadius: BorderRadius.all(
+              Radius.circular(14),
+            ),
+            borderSide: BorderSide(
               color: Color(0xFFE0E0E0),
             ),
           ),
 
           focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(14),
-            borderSide: const BorderSide(
+            borderRadius: BorderRadius.all(
+              Radius.circular(14),
+            ),
+            borderSide: BorderSide(
               color: primaryOrange,
               width: 2,
             ),
           ),
 
           errorBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(14),
-            borderSide: const BorderSide(
+            borderRadius: BorderRadius.all(
+              Radius.circular(14),
+            ),
+            borderSide: BorderSide(
               color: Colors.red,
             ),
           ),
 
           focusedErrorBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(14),
-            borderSide: const BorderSide(
+            borderRadius: BorderRadius.all(
+              Radius.circular(14),
+            ),
+            borderSide: BorderSide(
               color: Colors.red,
               width: 2,
             ),

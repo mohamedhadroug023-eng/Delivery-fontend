@@ -1,3 +1,6 @@
+const crypto = require("crypto");
+const bcrypt = require("bcrypt");
+
 const pool = require("../config/database");
 
 const {
@@ -318,6 +321,12 @@ async function acceptOrderOffer(req, res, next) {
       });
     }
 
+    await connection.beginTransaction();
+
+    /* -----------------------------------------------------
+       GET DRIVER
+    ----------------------------------------------------- */
+
     const [drivers] =
       await connection.execute(
         `
@@ -335,6 +344,8 @@ async function acceptOrderOffer(req, res, next) {
       );
 
     if (drivers.length === 0) {
+      await connection.rollback();
+
       return res.status(404).json({
         success: false,
         message: "Driver profile not found"
@@ -349,6 +360,8 @@ async function acceptOrderOffer(req, res, next) {
       !driver.is_available ||
       Number(driver.current_orders_count) > 0
     ) {
+      await connection.rollback();
+
       return res.status(409).json({
         success: false,
         message:
@@ -356,7 +369,9 @@ async function acceptOrderOffer(req, res, next) {
       });
     }
 
-    await connection.beginTransaction();
+    /* -----------------------------------------------------
+       GET ORDER
+    ----------------------------------------------------- */
 
     const [orders] =
       await connection.execute(
@@ -423,6 +438,32 @@ async function acceptOrderOffer(req, res, next) {
       });
     }
 
+    /* -----------------------------------------------------
+       GENERATE 4 DIGIT OTP
+    ----------------------------------------------------- */
+
+    const pickupOtp =
+      crypto.randomInt(
+        1000,
+        10000
+      ).toString();
+
+    const pickupOtpHash =
+      await bcrypt.hash(
+        pickupOtp,
+        10
+      );
+
+    const pickupOtpExpiresAt =
+      new Date(
+        Date.now() +
+        30 * 60 * 1000
+      );
+
+    /* -----------------------------------------------------
+       ACCEPT ORDER + SAVE OTP
+    ----------------------------------------------------- */
+
     await connection.execute(
       `
       UPDATE orders
@@ -431,14 +472,22 @@ async function acceptOrderOffer(req, res, next) {
         driver_id = ?,
         current_offer_driver_id = NULL,
         offer_expires_at = NULL,
-        accepted_at = CURRENT_TIMESTAMP
+        accepted_at = CURRENT_TIMESTAMP,
+        pickup_otp_hash = ?,
+        pickup_otp_expires_at = ?
       WHERE id = ?
       `,
       [
         driverId,
+        pickupOtpHash,
+        pickupOtpExpiresAt,
         order_id
       ]
     );
+
+    /* -----------------------------------------------------
+       UPDATE OFFER
+    ----------------------------------------------------- */
 
     await connection.execute(
       `
@@ -459,6 +508,10 @@ async function acceptOrderOffer(req, res, next) {
       ]
     );
 
+    /* -----------------------------------------------------
+       UPDATE DRIVER
+    ----------------------------------------------------- */
+
     await connection.execute(
       `
       UPDATE drivers
@@ -470,6 +523,10 @@ async function acceptOrderOffer(req, res, next) {
       `,
       [driverId]
     );
+
+    /* -----------------------------------------------------
+       EVENT
+    ----------------------------------------------------- */
 
     await connection.execute(
       `
@@ -495,14 +552,22 @@ async function acceptOrderOffer(req, res, next) {
 
     await connection.commit();
 
+    /* -----------------------------------------------------
+       RESPONSE
+    ----------------------------------------------------- */
+
     return res.status(200).json({
       success: true,
       message:
         "Order accepted successfully",
-      order_id: order_id
+      order_id,
+      pickup_otp: pickupOtp,
+      pickup_otp_expires_at:
+        pickupOtpExpiresAt
     });
 
   } catch (error) {
+
     try {
       await connection.rollback();
     } catch (_) {}
@@ -811,6 +876,7 @@ async function arriveAtRestaurant(req, res, next) {
     });
 
   } catch (error) {
+
     try {
       await connection.rollback();
     } catch (_) {}
@@ -902,15 +968,6 @@ async function startDelivery(req, res, next) {
       });
     }
 
-    /*
-      IMPORTANT:
-      The order must first be verified by OTP
-      and become "picked_up".
-
-      OTP verification will be added in the
-      next backend step.
-    */
-
     if (order.status !== "picked_up") {
       await connection.rollback();
 
@@ -963,6 +1020,7 @@ async function startDelivery(req, res, next) {
     });
 
   } catch (error) {
+
     try {
       await connection.rollback();
     } catch (_) {}
@@ -993,6 +1051,8 @@ async function completeDelivery(req, res, next) {
       });
     }
 
+    await connection.beginTransaction();
+
     const [drivers] =
       await connection.execute(
         `
@@ -1008,6 +1068,8 @@ async function completeDelivery(req, res, next) {
       );
 
     if (drivers.length === 0) {
+      await connection.rollback();
+
       return res.status(404).json({
         success: false,
         message: "Driver profile not found"
@@ -1016,8 +1078,6 @@ async function completeDelivery(req, res, next) {
 
     const driver = drivers[0];
     const driverId = driver.id;
-
-    await connection.beginTransaction();
 
     const [orders] =
       await connection.execute(
@@ -1161,6 +1221,7 @@ async function completeDelivery(req, res, next) {
     });
 
   } catch (error) {
+
     try {
       await connection.rollback();
     } catch (_) {}

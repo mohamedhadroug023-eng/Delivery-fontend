@@ -1,5 +1,5 @@
 require("dotenv").config();
-
+const errorHandler = require("./middleware/error.middleware");
 const express = require("express");
 const cors = require("cors");
 const helmet = require("helmet");

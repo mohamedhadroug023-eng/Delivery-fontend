@@ -64,7 +64,7 @@ class _DriverScreenState extends State<DriverScreen> {
         token: token,
         role: 'driver',
       );
-      );
+
 
       _socketService.on(
         'order_offer',

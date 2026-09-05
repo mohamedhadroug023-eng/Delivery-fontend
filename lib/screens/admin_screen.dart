@@ -3,6 +3,9 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../services/api_service.dart';
+import '../services/auth_service.dart';
+
+import 'role_selection_screen.dart';
 
 class AdminScreen extends StatefulWidget {
   const AdminScreen({super.key});
@@ -12,134 +15,108 @@ class AdminScreen extends StatefulWidget {
 }
 
 class _AdminScreenState extends State<AdminScreen> {
-  static const orange = Color(0xFFFF6B00);
-
   bool loading = true;
   bool refreshing = false;
 
-  String? errorMessage;
+  Map<String, dynamic> statistics = {};
 
-  int restaurants = 0;
-  int drivers = 0;
-  int onlineDrivers = 0;
-  int todayOrders = 0;
-  int activeOrders = 0;
-
-  double todayRevenue = 0;
-  double totalBalanceDue = 0;
-
-  List<Map<String, dynamic>> activeOrdersList = [];
+  List<dynamic> activeOrders = [];
+  List<dynamic> restaurants = [];
+  List<dynamic> drivers = [];
+  List<dynamic> allOrders = [];
 
   Timer? _refreshTimer;
+
+  int selectedPage = 0;
 
   @override
   void initState() {
     super.initState();
 
-    loadDashboard();
+    loadAllData();
 
     _refreshTimer = Timer.periodic(
       const Duration(seconds: 5),
       (_) {
-        loadDashboard(
-          silent: true,
-        );
+        if (!loading) {
+          loadAllData(
+            silent: true,
+          );
+        }
       },
     );
   }
 
-  // =========================================================
-  // LOAD DASHBOARD
-  // =========================================================
+  /* =========================================================
+     LOAD ALL DATA
+  ========================================================= */
 
-  Future<void> loadDashboard({
+  Future<void> loadAllData({
     bool silent = false,
   }) async {
     if (!silent && mounted) {
       setState(() {
         loading = true;
-        errorMessage = null;
-      });
-    }
-
-    if (silent && mounted) {
-      setState(() {
-        refreshing = true;
       });
     }
 
     try {
-      final response =
+      final dashboard =
           await ApiService.get(
         '/admin/dashboard',
       );
 
-      final statistics =
-          response['statistics'];
+      final restaurantResponse =
+          await ApiService.get(
+        '/admin/restaurants',
+      );
 
-      final orders =
-          response['active_orders'];
+      final driverResponse =
+          await ApiService.get(
+        '/admin/drivers',
+      );
+
+      final orderResponse =
+          await ApiService.get(
+        '/admin/orders',
+      );
 
       if (!mounted) return;
 
       setState(() {
-        restaurants =
-            int.tryParse(
-                  '${statistics?['restaurants'] ?? 0}',
-                ) ??
-                0;
-
-        drivers =
-            int.tryParse(
-                  '${statistics?['drivers'] ?? 0}',
-                ) ??
-                0;
-
-        onlineDrivers =
-            int.tryParse(
-                  '${statistics?['online_drivers'] ?? 0}',
-                ) ??
-                0;
-
-        todayOrders =
-            int.tryParse(
-                  '${statistics?['today_orders'] ?? 0}',
-                ) ??
-                0;
+        statistics =
+            Map<String, dynamic>.from(
+          dashboard['statistics'] ??
+              {},
+        );
 
         activeOrders =
-            int.tryParse(
-                  '${statistics?['active_orders'] ?? 0}',
-                ) ??
-                0;
+            List<dynamic>.from(
+          dashboard['active_orders'] ??
+              [],
+        );
 
-        todayRevenue =
-            double.tryParse(
-                  '${statistics?['today_revenue'] ?? 0}',
-                ) ??
-                0;
+        restaurants =
+            List<dynamic>.from(
+          restaurantResponse[
+                  'restaurants'] ??
+              [],
+        );
 
-        totalBalanceDue =
-            double.tryParse(
-                  '${statistics?['total_balance_due'] ?? 0}',
-                ) ??
-                0;
+        drivers =
+            List<dynamic>.from(
+          driverResponse['drivers'] ??
+              [],
+        );
 
-        activeOrdersList =
-            orders is List
-                ? orders
-                    .map(
-                      (order) =>
-                          Map<String, dynamic>.from(
-                        order,
-                      ),
-                    )
-                    .toList()
-                : [];
+        allOrders =
+            List<dynamic>.from(
+          orderResponse['orders'] ??
+              [],
+        );
 
         loading = false;
         refreshing = false;
-        errorMessage = null;
       });
     } catch (error) {
       if (!mounted) return;
@@ -147,39 +124,322 @@ class _AdminScreenState extends State<AdminScreen> {
       setState(() {
         loading = false;
         refreshing = false;
-        errorMessage =
-            error.toString().replaceFirst(
-                  'Exception: ',
-                  '',
-                );
       });
+
+      if (!silent) {
+        showMessage(
+          _cleanError(error),
+          isError: true,
+        );
+      }
     }
   }
 
-  // =========================================================
-  // FORMAT MONEY
-  // =========================================================
+  /* =========================================================
+     REFRESH
+  ========================================================= */
 
-  String formatMoney(
-    dynamic value,
-  ) {
+  Future<void> refreshData() async {
+    if (refreshing) return;
+
+    setState(() {
+      refreshing = true;
+    });
+
+    await loadAllData(
+      silent: true,
+    );
+  }
+
+  /* =========================================================
+     RESTAURANT STATUS
+  ========================================================= */
+
+  Future<void> updateRestaurantStatus(
+    Map<String, dynamic> restaurant,
+  ) async {
+    final id =
+        int.tryParse(
+      restaurant['id'].toString(),
+    );
+
+    if (id == null) {
+      showMessage(
+        'معرّف المطعم غير صالح',
+        isError: true,
+      );
+      return;
+    }
+
+    final currentStatus =
+        restaurant['is_active'] == true ||
+        restaurant['is_active'] == 1;
+
+    final newStatus = !currentStatus;
+
+    if (!newStatus) {
+      final confirmed =
+          await showConfirmDialog(
+        title: 'تعطيل المطعم',
+        message:
+            'هل تريد تعطيل هذا المطعم؟\n\n'
+            'سيتم أيضًا تعطيل حساب الدخول الخاص به.',
+        confirmText: 'تعطيل',
+      );
+
+      if (!confirmed) return;
+    }
+
+    try {
+      showLoadingDialog();
+
+      await ApiService.patch(
+        '/admin/restaurants/$id/status',
+        {
+          'is_active': newStatus,
+        },
+      );
+
+      if (!mounted) return;
+
+      Navigator.of(context).pop();
+
+      showMessage(
+        newStatus
+            ? 'تم تفعيل المطعم بنجاح'
+            : 'تم تعطيل المطعم بنجاح',
+      );
+
+      await loadAllData(
+        silent: true,
+      );
+    } catch (error) {
+      if (!mounted) return;
+
+      Navigator.of(context).pop();
+
+      showMessage(
+        _cleanError(error),
+        isError: true,
+      );
+    }
+  }
+
+  /* =========================================================
+     DRIVER STATUS
+  ========================================================= */
+
+  Future<void> updateDriverStatus(
+    Map<String, dynamic> driver,
+  ) async {
+    final id =
+        int.tryParse(
+      driver['id'].toString(),
+    );
+
+    if (id == null) {
+      showMessage(
+        'معرّف السائق غير صالح',
+        isError: true,
+      );
+      return;
+    }
+
+    final currentStatus =
+        driver['is_active'] == true ||
+        driver['is_active'] == 1;
+
+    final newStatus = !currentStatus;
+
+    if (!newStatus) {
+      final confirmed =
+          await showConfirmDialog(
+        title: 'تعطيل السائق',
+        message:
+            'هل تريد تعطيل هذا السائق؟\n\n'
+            'سيتم إخراجه من حالة الاتصال تلقائيًا.',
+        confirmText: 'تعطيل',
+      );
+
+      if (!confirmed) return;
+    }
+
+    try {
+      showLoadingDialog();
+
+      await ApiService.patch(
+        '/admin/drivers/$id/status',
+        {
+          'is_active': newStatus,
+        },
+      );
+
+      if (!mounted) return;
+
+      Navigator.of(context).pop();
+
+      showMessage(
+        newStatus
+            ? 'تم تفعيل السائق بنجاح'
+            : 'تم تعطيل السائق بنجاح',
+      );
+
+      await loadAllData(
+        silent: true,
+      );
+    } catch (error) {
+      if (!mounted) return;
+
+      Navigator.of(context).pop();
+
+      showMessage(
+        _cleanError(error),
+        isError: true,
+      );
+    }
+  }
+
+  /* =========================================================
+     LOGOUT
+  ========================================================= */
+
+  Future<void> logout() async {
+    final confirmed =
+        await showConfirmDialog(
+      title: 'تسجيل الخروج',
+      message:
+          'هل تريد تسجيل الخروج من لوحة الإدارة؟',
+      confirmText: 'خروج',
+    );
+
+    if (!confirmed) return;
+
+    _refreshTimer?.cancel();
+
+    await AuthService.logout();
+
+    if (!mounted) return;
+
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(
+        builder: (_) =>
+            const RoleSelectionScreen(),
+      ),
+      (route) => false,
+    );
+  }
+
+  /* =========================================================
+     HELPERS
+  ========================================================= */
+
+  String _cleanError(Object error) {
+    String message = error.toString();
+
+    if (message.startsWith(
+      'Exception: ',
+    )) {
+      message =
+          message.substring(11);
+    }
+
+    return message;
+  }
+
+  void showMessage(
+    String message, {
+    bool isError = false,
+  }) {
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context)
+        .hideCurrentSnackBar();
+
+    ScaffoldMessenger.of(context)
+        .showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor:
+            isError ? Colors.red : null,
+      ),
+    );
+  }
+
+  Future<bool> showConfirmDialog({
+    required String title,
+    required String message,
+    required String confirmText,
+  }) async {
+    final result =
+        await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: Text(title),
+          content: Text(message),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(
+                  dialogContext,
+                ).pop(false);
+              },
+              child: const Text(
+                'إلغاء',
+              ),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.of(
+                  dialogContext,
+                ).pop(true);
+              },
+              child: Text(
+                confirmText,
+              ),
+            ),
+          ],
+        );
+      },
+    );
+
+    return result ?? false;
+  }
+
+  void showLoadingDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) {
+        return const Center(
+          child: CircularProgressIndicator(),
+        );
+      },
+    );
+  }
+
+  /* =========================================================
+     FORMAT MONEY
+  ========================================================= */
+
+  String money(dynamic value) {
     final number =
         double.tryParse(
-              '$value',
+              value?.toString() ?? '',
             ) ??
             0;
 
     return '${number.toStringAsFixed(3)} د.ت';
   }
 
-  // =========================================================
-  // STATUS LABEL
-  // =========================================================
+  /* =========================================================
+     STATUS
+  ========================================================= */
 
-  String statusLabel(
-    String? status,
+  String statusText(
+    dynamic status,
   ) {
-    switch (status) {
+    switch (status?.toString()) {
       case 'pending':
         return 'في الانتظار';
 
@@ -187,25 +447,25 @@ class _AdminScreenState extends State<AdminScreen> {
         return 'جاري البحث عن سائق';
 
       case 'offered':
-        return 'عرض على السائق';
+        return 'عرض عند السائق';
 
       case 'accepted':
-        return 'تم قبول الطلب';
+        return 'تم القبول';
 
       case 'driver_arrived':
-        return 'السائق وصل للمطعم';
+        return 'السائق وصل';
 
       case 'pickup_verified':
         return 'تم التحقق';
 
       case 'picked_up':
-        return 'تم استلام الطلب';
+        return 'تم الاستلام';
 
       case 'delivering':
         return 'جاري التوصيل';
 
       case 'delivered':
-        return 'تم التوصيل';
+        return 'تم التسليم';
 
       case 'cancelled':
         return 'ملغى';
@@ -214,14 +474,15 @@ class _AdminScreenState extends State<AdminScreen> {
         return 'فشل';
 
       default:
-        return status ?? 'غير معروف';
+        return status?.toString() ??
+            'غير معروف';
     }
   }
 
   Color statusColor(
-    String? status,
+    dynamic status,
   ) {
-    switch (status) {
+    switch (status?.toString()) {
       case 'delivered':
         return Colors.green;
 
@@ -229,33 +490,1232 @@ class _AdminScreenState extends State<AdminScreen> {
       case 'failed':
         return Colors.red;
 
+      case 'offered':
+      case 'dispatching':
+        return Colors.orange;
+
+      case 'accepted':
       case 'driver_arrived':
       case 'picked_up':
       case 'delivering':
         return Colors.blue;
-
-      case 'accepted':
-        return Colors.orange;
-
-      case 'offered':
-        return Colors.deepPurple;
 
       default:
         return Colors.grey;
     }
   }
 
-  // =========================================================
-  // REFRESH BUTTON
-  // =========================================================
+  /* =========================================================
+     DRAWER
+  ========================================================= */
 
-  Future<void> refreshDashboard() async {
-    await loadDashboard();
+  Widget buildDrawer() {
+    return Drawer(
+      child: SafeArea(
+        child: Column(
+          children: [
+            Container(
+              width: double.infinity,
+              padding:
+                  const EdgeInsets.all(24),
+              child: const Column(
+                crossAxisAlignment:
+                    CrossAxisAlignment.start,
+                children: [
+                  CircleAvatar(
+                    radius: 32,
+                    child: Icon(
+                      Icons.admin_panel_settings,
+                      size: 35,
+                    ),
+                  ),
+                  SizedBox(height: 12),
+                  Text(
+                    'HADROUG DELIVERY',
+                    style: TextStyle(
+                      fontSize: 19,
+                      fontWeight:
+                          FontWeight.bold,
+                    ),
+                  ),
+                  SizedBox(height: 4),
+                  Text(
+                    'لوحة الإدارة',
+                    style: TextStyle(
+                      color: Colors.grey,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            const Divider(),
+
+            drawerItem(
+              icon: Icons.dashboard,
+              title: 'لوحة التحكم',
+              index: 0,
+            ),
+
+            drawerItem(
+              icon: Icons.restaurant,
+              title: 'إدارة المطاعم',
+              index: 1,
+            ),
+
+            drawerItem(
+              icon: Icons.delivery_dining,
+              title: 'إدارة السائقين',
+              index: 2,
+            ),
+
+            drawerItem(
+              icon: Icons.receipt_long,
+              title: 'جميع الطلبات',
+              index: 3,
+            ),
+
+            const Spacer(),
+
+            const Divider(),
+
+            ListTile(
+              leading: const Icon(
+                Icons.refresh,
+              ),
+              title: const Text(
+                'تحديث البيانات',
+              ),
+              onTap: () {
+                Navigator.of(
+                  context,
+                ).pop();
+
+                refreshData();
+              },
+            ),
+
+            ListTile(
+              leading: const Icon(
+                Icons.logout,
+                color: Colors.red,
+              ),
+              title: const Text(
+                'تسجيل الخروج',
+                style: TextStyle(
+                  color: Colors.red,
+                ),
+              ),
+              onTap: () {
+                Navigator.of(
+                  context,
+                ).pop();
+
+                logout();
+              },
+            ),
+
+            const SizedBox(
+              height: 10,
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
-  // =========================================================
-  // BUILD
-  // =========================================================
+  Widget drawerItem({
+    required IconData icon,
+    required String title,
+    required int index,
+  }) {
+    final selected =
+        selectedPage == index;
+
+    return ListTile(
+      selected: selected,
+      leading: Icon(icon),
+      title: Text(title),
+      onTap: () {
+        setState(() {
+          selectedPage = index;
+        });
+
+        Navigator.of(context).pop();
+      },
+    );
+  }
+
+  /* =========================================================
+     DASHBOARD
+  ========================================================= */
+
+  Widget buildDashboard() {
+    return RefreshIndicator(
+      onRefresh: refreshData,
+      child: ListView(
+        padding:
+            const EdgeInsets.all(16),
+        children: [
+          const Text(
+            'لوحة التحكم',
+            style: TextStyle(
+              fontSize: 25,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+
+          const SizedBox(height: 6),
+
+          const Text(
+            'نظرة مباشرة على نظام HADROUG DELIVERY',
+            style: TextStyle(
+              color: Colors.grey,
+            ),
+          ),
+
+          const SizedBox(height: 20),
+
+          GridView.count(
+            crossAxisCount: 2,
+            crossAxisSpacing: 12,
+            mainAxisSpacing: 12,
+            shrinkWrap: true,
+            physics:
+                const NeverScrollableScrollPhysics(),
+            childAspectRatio: 1.45,
+            children: [
+              statCard(
+                title: 'المطاعم',
+                value:
+                    '${statistics['restaurants'] ?? 0}',
+                icon: Icons.restaurant,
+              ),
+              statCard(
+                title: 'السائقون',
+                value:
+                    '${statistics['drivers'] ?? 0}',
+                icon:
+                    Icons.delivery_dining,
+              ),
+              statCard(
+                title: 'السائقون المتصلون',
+                value:
+                    '${statistics['online_drivers'] ?? 0}',
+                icon: Icons.wifi,
+              ),
+              statCard(
+                title: 'طلبات اليوم',
+                value:
+                    '${statistics['today_orders'] ?? 0}',
+                icon:
+                    Icons.shopping_bag,
+              ),
+              statCard(
+                title: 'إيرادات اليوم',
+                value: money(
+                  statistics[
+                      'today_revenue'],
+                ),
+                icon:
+                    Icons.account_balance_wallet,
+              ),
+              statCard(
+                title: 'المستحقات',
+                value: money(
+                  statistics[
+                      'total_balance_due'],
+                ),
+                icon:
+                    Icons.payments,
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 25),
+
+          sectionTitle(
+            'الطلبات النشطة',
+            activeOrders.length,
+          ),
+
+          const SizedBox(height: 10),
+
+          if (activeOrders.isEmpty)
+            emptyCard(
+              icon:
+                  Icons.local_shipping_outlined,
+              text:
+                  'لا توجد طلبات نشطة حاليًا',
+            )
+          else
+            ...activeOrders.map(
+              (order) =>
+                  orderCard(order),
+            ),
+        ],
+      ),
+    );
+  }
+
+  /* =========================================================
+     RESTAURANTS PAGE
+  ========================================================= */
+
+  Widget buildRestaurantsPage() {
+    return RefreshIndicator(
+      onRefresh: refreshData,
+      child: ListView(
+        padding:
+            const EdgeInsets.all(16),
+        children: [
+          const Text(
+            'إدارة المطاعم',
+            style: TextStyle(
+              fontSize: 25,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+
+          const SizedBox(height: 6),
+
+          Text(
+            '${restaurants.length} مطعم',
+            style: const TextStyle(
+              color: Colors.grey,
+            ),
+          ),
+
+          const SizedBox(height: 18),
+
+          if (restaurants.isEmpty)
+            emptyCard(
+              icon: Icons.restaurant,
+              text:
+                  'لا توجد مطاعم',
+            )
+          else
+            ...restaurants.map(
+              (restaurant) =>
+                  restaurantCard(
+                Map<String, dynamic>.from(
+                  restaurant,
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  /* =========================================================
+     DRIVERS PAGE
+  ========================================================= */
+
+  Widget buildDriversPage() {
+    return RefreshIndicator(
+      onRefresh: refreshData,
+      child: ListView(
+        padding:
+            const EdgeInsets.all(16),
+        children: [
+          const Text(
+            'إدارة السائقين',
+            style: TextStyle(
+              fontSize: 25,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+
+          const SizedBox(height: 6),
+
+          Text(
+            '${drivers.length} سائق',
+            style: const TextStyle(
+              color: Colors.grey,
+            ),
+          ),
+
+          const SizedBox(height: 18),
+
+          if (drivers.isEmpty)
+            emptyCard(
+              icon:
+                  Icons.delivery_dining,
+              text:
+                  'لا توجد بيانات سائقين',
+            )
+          else
+            ...drivers.map(
+              (driver) =>
+                  driverCard(
+                Map<String, dynamic>.from(
+                  driver,
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  /* =========================================================
+     ORDERS PAGE
+  ========================================================= */
+
+  Widget buildOrdersPage() {
+    return RefreshIndicator(
+      onRefresh: refreshData,
+      child: ListView(
+        padding:
+            const EdgeInsets.all(16),
+        children: [
+          const Text(
+            'جميع الطلبات',
+            style: TextStyle(
+              fontSize: 25,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+
+          const SizedBox(height: 6),
+
+          Text(
+            '${allOrders.length} طلب',
+            style: const TextStyle(
+              color: Colors.grey,
+            ),
+          ),
+
+          const SizedBox(height: 18),
+
+          if (allOrders.isEmpty)
+            emptyCard(
+              icon:
+                  Icons.receipt_long,
+              text:
+                  'لا توجد طلبات',
+            )
+          else
+            ...allOrders.map(
+              (order) =>
+                  orderCard(order),
+            ),
+        ],
+      ),
+    );
+  }
+
+  /* =========================================================
+     STAT CARD
+  ========================================================= */
+
+  Widget statCard({
+    required String title,
+    required String value,
+    required IconData icon,
+  }) {
+    return Card(
+      elevation: 2,
+      child: Padding(
+        padding:
+            const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment:
+              CrossAxisAlignment.start,
+          children: [
+            Icon(
+              icon,
+              size: 28,
+            ),
+            const Spacer(),
+            Text(
+              value,
+              style: const TextStyle(
+                fontSize: 20,
+                fontWeight:
+                    FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              title,
+              maxLines: 1,
+              overflow:
+                  TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: Colors.grey,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /* =========================================================
+     RESTAURANT CARD
+  ========================================================= */
+
+  Widget restaurantCard(
+    Map<String, dynamic> restaurant,
+  ) {
+    final active =
+        restaurant['is_active'] == true ||
+            restaurant['is_active'] == 1;
+
+    final name =
+        restaurant['name']?.toString() ??
+            'مطعم';
+
+    final phone =
+        restaurant['phone']?.toString() ??
+            'غير متوفر';
+
+    final address =
+        restaurant['address']?.toString() ??
+            'غير متوفر';
+
+    final balance =
+        restaurant['balance_due'];
+
+    return Card(
+      margin:
+          const EdgeInsets.only(
+        bottom: 12,
+      ),
+      child: Padding(
+        padding:
+            const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment:
+              CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                CircleAvatar(
+                  child: Icon(
+                    Icons.restaurant,
+                  ),
+                ),
+
+                const SizedBox(width: 12),
+
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment:
+                        CrossAxisAlignment
+                            .start,
+                    children: [
+                      Text(
+                        name,
+                        style:
+                            const TextStyle(
+                          fontSize: 18,
+                          fontWeight:
+                              FontWeight.bold,
+                        ),
+                      ),
+                      Text(
+                        phone,
+                        style:
+                            const TextStyle(
+                          color: Colors.grey,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
+                statusBadge(
+                  active
+                      ? 'نشط'
+                      : 'متوقف',
+                  active
+                      ? Colors.green
+                      : Colors.red,
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 14),
+
+            Row(
+              crossAxisAlignment:
+                  CrossAxisAlignment.start,
+              children: [
+                const Icon(
+                  Icons.location_on_outlined,
+                  size: 20,
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    address,
+                  ),
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 8),
+
+            Row(
+              children: [
+                const Icon(
+                  Icons.payments_outlined,
+                  size: 20,
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  'المستحق: ${money(balance)}',
+                  style:
+                      const TextStyle(
+                    fontWeight:
+                        FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 14),
+
+            Row(
+              children: [
+                Expanded(
+                  child:
+                      OutlinedButton.icon(
+                    onPressed: () {
+                      showRestaurantDetails(
+                        restaurant,
+                      );
+                    },
+                    icon: const Icon(
+                      Icons.info_outline,
+                    ),
+                    label:
+                        const Text(
+                      'التفاصيل',
+                    ),
+                  ),
+                ),
+
+                const SizedBox(width: 10),
+
+                Expanded(
+                  child:
+                      ElevatedButton.icon(
+                    onPressed: () =>
+                        updateRestaurantStatus(
+                      restaurant,
+                    ),
+                    icon: Icon(
+                      active
+                          ? Icons.block
+                          : Icons.check_circle,
+                    ),
+                    label: Text(
+                      active
+                          ? 'تعطيل'
+                          : 'تفعيل',
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /* =========================================================
+     DRIVER CARD
+  ========================================================= */
+
+  Widget driverCard(
+    Map<String, dynamic> driver,
+  ) {
+    final active =
+        driver['is_active'] == true ||
+            driver['is_active'] == 1;
+
+    final online =
+        driver['is_online'] == true ||
+            driver['is_online'] == 1;
+
+    final available =
+        driver['is_available'] == true ||
+            driver['is_available'] == 1;
+
+    final name =
+        driver['full_name']?.toString() ??
+            'سائق';
+
+    final phone =
+        driver['phone']?.toString() ??
+            'غير متوفر';
+
+    final vehicle =
+        driver['vehicle_type']?.toString() ??
+            'غير محدد';
+
+    return Card(
+      margin:
+          const EdgeInsets.only(
+        bottom: 12,
+      ),
+      child: Padding(
+        padding:
+            const EdgeInsets.all(16),
+        child: Column(
+          children: [
+            Row(
+              children: [
+                CircleAvatar(
+                  child: Icon(
+                    Icons.delivery_dining,
+                  ),
+                ),
+
+                const SizedBox(width: 12),
+
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment:
+                        CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        name,
+                        style:
+                            const TextStyle(
+                          fontSize: 18,
+                          fontWeight:
+                              FontWeight.bold,
+                        ),
+                      ),
+                      Text(
+                        phone,
+                        style:
+                            const TextStyle(
+                          color: Colors.grey,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
+                statusBadge(
+                  active
+                      ? 'نشط'
+                      : 'متوقف',
+                  active
+                      ? Colors.green
+                      : Colors.red,
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 14),
+
+            Row(
+              children: [
+                Expanded(
+                  child: infoBox(
+                    icon: Icons.two_wheeler,
+                    title: 'المركبة',
+                    value: vehicle,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: infoBox(
+                    icon: Icons.wifi,
+                    title: 'الاتصال',
+                    value: online
+                        ? 'Online'
+                        : 'Offline',
+                  ),
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 8),
+
+            Row(
+              children: [
+                Expanded(
+                  child: infoBox(
+                    icon: Icons.check_circle,
+                    title: 'متاح',
+                    value: available
+                        ? 'نعم'
+                        : 'لا',
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: infoBox(
+                    icon:
+                        Icons.shopping_bag,
+                    title: 'طلبات مكتملة',
+                    value:
+                        '${driver['total_completed_orders'] ?? 0}',
+                  ),
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 14),
+
+            Row(
+              children: [
+                Expanded(
+                  child:
+                      ElevatedButton.icon(
+                    onPressed: () =>
+                        updateDriverStatus(
+                      driver,
+                    ),
+                    icon: Icon(
+                      active
+                          ? Icons.block
+                          : Icons.check_circle,
+                    ),
+                    label: Text(
+                      active
+                          ? 'تعطيل السائق'
+                          : 'تفعيل السائق',
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /* =========================================================
+     ORDER CARD
+  ========================================================= */
+
+  Widget orderCard(
+    dynamic rawOrder,
+  ) {
+    final order =
+        Map<String, dynamic>.from(
+      rawOrder,
+    );
+
+    final status =
+        order['status'];
+
+    final restaurant =
+        order['restaurant_name']
+                ?.toString() ??
+            'مطعم غير معروف';
+
+    final driver =
+        order['driver_name']
+                ?.toString() ??
+            'لم يتم تعيين سائق';
+
+    final customer =
+        order['customer_name']
+                ?.toString() ??
+            'زبون';
+
+    final address =
+        order['customer_address']
+                ?.toString() ??
+            'العنوان غير متوفر';
+
+    return Card(
+      margin:
+          const EdgeInsets.only(
+        bottom: 12,
+      ),
+      child: Padding(
+        padding:
+            const EdgeInsets.all(15),
+        child: Column(
+          crossAxisAlignment:
+              CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Text(
+                  '#${order['id'] ?? '-'}',
+                  style:
+                      const TextStyle(
+                    fontWeight:
+                        FontWeight.bold,
+                    fontSize: 17,
+                  ),
+                ),
+
+                const Spacer(),
+
+                statusBadge(
+                  statusText(status),
+                  statusColor(status),
+                ),
+              ],
+            ),
+
+            const Divider(),
+
+            infoRow(
+              Icons.restaurant,
+              'المطعم',
+              restaurant,
+            ),
+
+            infoRow(
+              Icons.person,
+              'الزبون',
+              customer,
+            ),
+
+            infoRow(
+              Icons.delivery_dining,
+              'السائق',
+              driver,
+            ),
+
+            infoRow(
+              Icons.location_on_outlined,
+              'العنوان',
+              address,
+            ),
+
+            const Divider(),
+
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'قيمة الطعام\n${money(order['food_amount'])}',
+                    style:
+                        const TextStyle(
+                      fontWeight:
+                          FontWeight.w600,
+                    ),
+                  ),
+                ),
+
+                Expanded(
+                  child: Text(
+                    'أجرة السائق\n${money(order['driver_fee'])}',
+                    style:
+                        const TextStyle(
+                      fontWeight:
+                          FontWeight.w600,
+                    ),
+                  ),
+                ),
+
+                Expanded(
+                  child: Text(
+                    'رسوم HADROUG\n${money(order['hadroug_fee'])}',
+                    style:
+                        const TextStyle(
+                      fontWeight:
+                          FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /* =========================================================
+     RESTAURANT DETAILS
+  ========================================================= */
+
+  void showRestaurantDetails(
+    Map<String, dynamic> restaurant,
+  ) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) {
+        final active =
+            restaurant['is_active'] ==
+                    true ||
+                restaurant['is_active'] ==
+                    1;
+
+        return SafeArea(
+          child: Padding(
+            padding:
+                const EdgeInsets.all(20),
+            child: Column(
+              mainAxisSize:
+                  MainAxisSize.min,
+              crossAxisAlignment:
+                  CrossAxisAlignment.start,
+              children: [
+                Text(
+                  restaurant['name']
+                          ?.toString() ??
+                      'مطعم',
+                  style:
+                      const TextStyle(
+                    fontSize: 23,
+                    fontWeight:
+                        FontWeight.bold,
+                  ),
+                ),
+
+                const SizedBox(height: 18),
+
+                infoRow(
+                  Icons.phone,
+                  'الهاتف',
+                  restaurant['phone']
+                          ?.toString() ??
+                      'غير متوفر',
+                ),
+
+                infoRow(
+                  Icons.email,
+                  'البريد',
+                  restaurant['email']
+                          ?.toString() ??
+                      'غير متوفر',
+                ),
+
+                infoRow(
+                  Icons.location_on,
+                  'العنوان',
+                  restaurant['address']
+                          ?.toString() ??
+                      'غير متوفر',
+                ),
+
+                infoRow(
+                  Icons.payments,
+                  'الرصيد المستحق',
+                  money(
+                    restaurant[
+                        'balance_due'],
+                  ),
+                ),
+
+                const SizedBox(height: 14),
+
+                statusBadge(
+                  active
+                      ? 'الحساب نشط'
+                      : 'الحساب متوقف',
+                  active
+                      ? Colors.green
+                      : Colors.red,
+                ),
+
+                const SizedBox(height: 20),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  /* =========================================================
+     SMALL WIDGETS
+  ========================================================= */
+
+  Widget sectionTitle(
+    String title,
+    int count,
+  ) {
+    return Row(
+      children: [
+        Text(
+          title,
+          style:
+              const TextStyle(
+            fontSize: 20,
+            fontWeight:
+                FontWeight.bold,
+          ),
+        ),
+        const SizedBox(width: 8),
+        CircleAvatar(
+          radius: 12,
+          child: Text(
+            '$count',
+            style:
+                const TextStyle(
+              fontSize: 12,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget emptyCard({
+    required IconData icon,
+    required String text,
+  }) {
+    return Card(
+      child: Padding(
+        padding:
+            const EdgeInsets.all(35),
+        child: Column(
+          children: [
+            Icon(
+              icon,
+              size: 50,
+              color: Colors.grey,
+            ),
+            const SizedBox(height: 12),
+            Text(
+              text,
+              textAlign:
+                  TextAlign.center,
+              style:
+                  const TextStyle(
+                color: Colors.grey,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget statusBadge(
+    String text,
+    Color color,
+  ) {
+    return Container(
+      padding:
+          const EdgeInsets.symmetric(
+        horizontal: 9,
+        vertical: 5,
+      ),
+      decoration:
+          BoxDecoration(
+        color:
+            color.withOpacity(0.12),
+        borderRadius:
+            BorderRadius.circular(20),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(
+          color: color,
+          fontWeight:
+              FontWeight.bold,
+          fontSize: 12,
+        ),
+      ),
+    );
+  }
+
+  Widget infoRow(
+    IconData icon,
+    String title,
+    String value,
+  ) {
+    return Padding(
+      padding:
+          const EdgeInsets.only(
+        bottom: 9,
+      ),
+      child: Row(
+        crossAxisAlignment:
+            CrossAxisAlignment.start,
+        children: [
+          Icon(
+            icon,
+            size: 19,
+          ),
+          const SizedBox(width: 8),
+          Text(
+            '$title: ',
+            style:
+                const TextStyle(
+              fontWeight:
+                  FontWeight.w600,
+            ),
+          ),
+          Expanded(
+            child: Text(value),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget infoBox({
+    required IconData icon,
+    required String title,
+    required String value,
+  }) {
+    return Container(
+      padding:
+          const EdgeInsets.all(10),
+      decoration:
+          BoxDecoration(
+        borderRadius:
+            BorderRadius.circular(10),
+        border: Border.all(
+          color:
+              Colors.grey.shade300,
+        ),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            icon,
+            size: 20,
+          ),
+          const SizedBox(width: 7),
+          Expanded(
+            child: Column(
+              crossAxisAlignment:
+                  CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style:
+                      const TextStyle(
+                    fontSize: 11,
+                    color: Colors.grey,
+                  ),
+                ),
+                Text(
+                  value,
+                  maxLines: 1,
+                  overflow:
+                      TextOverflow.ellipsis,
+                  style:
+                      const TextStyle(
+                    fontWeight:
+                        FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /* =========================================================
+     BUILD
+  ========================================================= */
 
   @override
   Widget build(
@@ -269,24 +1729,21 @@ class _AdminScreenState extends State<AdminScreen> {
         actions: [
           if (refreshing)
             const Padding(
-              padding: EdgeInsets.symmetric(
-                horizontal: 16,
-              ),
-              child: Center(
-                child: SizedBox(
-                  width: 18,
-                  height: 18,
-                  child:
-                      CircularProgressIndicator(
-                    strokeWidth: 2,
-                  ),
+              padding:
+                  EdgeInsets.all(16),
+              child:
+                  SizedBox(
+                width: 18,
+                height: 18,
+                child:
+                    CircularProgressIndicator(
+                  strokeWidth: 2,
                 ),
               ),
             )
           else
             IconButton(
-              onPressed:
-                  refreshDashboard,
+              onPressed: refreshData,
               icon: const Icon(
                 Icons.refresh,
               ),
@@ -294,896 +1751,24 @@ class _AdminScreenState extends State<AdminScreen> {
         ],
       ),
 
-      body: RefreshIndicator(
-        onRefresh:
-            refreshDashboard,
-
-        child: loading
-            ? ListView(
-                children: const [
-                  SizedBox(
-                    height: 300,
-                  ),
-                  Center(
-                    child:
-                        CircularProgressIndicator(),
-                  ),
-                ],
-              )
-            : errorMessage != null
-                ? ListView(
-                    padding:
-                        const EdgeInsets.all(
-                      24,
-                    ),
-                    children: [
-                      const SizedBox(
-                        height: 100,
-                      ),
-
-                      const Icon(
-                        Icons.error_outline,
-                        size: 60,
-                        color: Colors.red,
-                      ),
-
-                      const SizedBox(
-                        height: 20,
-                      ),
-
-                      const Center(
-                        child: Text(
-                          'تعذر تحميل لوحة الإدارة',
-                          style: TextStyle(
-                            fontSize: 20,
-                            fontWeight:
-                                FontWeight.bold,
-                          ),
-                        ),
-                      ),
-
-                      const SizedBox(
-                        height: 10,
-                      ),
-
-                      Center(
-                        child: Text(
-                          errorMessage!,
-                          textAlign:
-                              TextAlign.center,
-                          style: const TextStyle(
-                            color: Colors.grey,
-                          ),
-                        ),
-                      ),
-
-                      const SizedBox(
-                        height: 20,
-                      ),
-
-                      ElevatedButton.icon(
-                        onPressed:
-                            refreshDashboard,
-                        icon: const Icon(
-                          Icons.refresh,
-                        ),
-                        label: const Text(
-                          'إعادة المحاولة',
-                        ),
-                      ),
-                    ],
-                  )
-                : ListView(
-                    physics:
-                        const AlwaysScrollableScrollPhysics(),
-                    padding:
-                        const EdgeInsets.all(
-                      16,
-                    ),
-                    children: [
-
-                      // =============================
-                      // TITLE
-                      // =============================
-
-                      const Text(
-                        'نظرة عامة',
-                        style: TextStyle(
-                          fontSize: 25,
-                          fontWeight:
-                              FontWeight.bold,
-                        ),
-                      ),
-
-                      const SizedBox(
-                        height: 20,
-                      ),
-
-                      // =============================
-                      // STATISTICS
-                      // =============================
-
-                      GridView.count(
-                        crossAxisCount: 2,
-                        shrinkWrap: true,
-                        physics:
-                            const NeverScrollableScrollPhysics(),
-                        mainAxisSpacing: 12,
-                        crossAxisSpacing: 12,
-                        childAspectRatio:
-                            1.35,
-                        children: [
-
-                          _statCard(
-                            Icons.restaurant,
-                            'المطاعم',
-                            '$restaurants',
-                          ),
-
-                          _statCard(
-                            Icons.two_wheeler,
-                            'السائقون',
-                            '$drivers',
-                          ),
-
-                          _statCard(
-                            Icons.receipt_long,
-                            'طلبات اليوم',
-                            '$todayOrders',
-                          ),
-
-                          _statCard(
-                            Icons.payments,
-                            'دخل اليوم',
-                            formatMoney(
-                              todayRevenue,
-                            ),
-                          ),
-                        ],
-                      ),
-
-                      const SizedBox(
-                        height: 15,
-                      ),
-
-                      // =============================
-                      // ONLINE DRIVERS
-                      // =============================
-
-                      Card(
-                        child: Padding(
-                          padding:
-                              const EdgeInsets.all(
-                            20,
-                          ),
-                          child: Row(
-                            children: [
-
-                              Container(
-                                padding:
-                                    const EdgeInsets
-                                        .all(
-                                  13,
-                                ),
-                                decoration:
-                                    BoxDecoration(
-                                  color: Colors.green
-                                      .withOpacity(
-                                    .1,
-                                  ),
-                                  borderRadius:
-                                      BorderRadius
-                                          .circular(
-                                    15,
-                                  ),
-                                ),
-                                child:
-                                    const Icon(
-                                  Icons
-                                      .wifi_tethering,
-                                  color:
-                                      Colors.green,
-                                  size: 30,
-                                ),
-                              ),
-
-                              const SizedBox(
-                                width: 15,
-                              ),
-
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment:
-                                      CrossAxisAlignment
-                                          .start,
-                                  children: [
-
-                                    const Text(
-                                      'السائقون المتصلون',
-                                      style:
-                                          TextStyle(
-                                        color:
-                                            Colors.grey,
-                                      ),
-                                    ),
-
-                                    const SizedBox(
-                                      height: 5,
-                                    ),
-
-                                    Text(
-                                      '$onlineDrivers / $drivers',
-                                      style:
-                                          const TextStyle(
-                                        fontSize: 23,
-                                        fontWeight:
-                                            FontWeight
-                                                .bold,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-
-                              const Icon(
-                                Icons.circle,
-                                color:
-                                    Colors.green,
-                                size: 14,
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-
-                      const SizedBox(
-                        height: 12,
-                      ),
-
-                      // =============================
-                      // BALANCE DUE
-                      // =============================
-
-                      Card(
-                        child: Padding(
-                          padding:
-                              const EdgeInsets.all(
-                            20,
-                          ),
-                          child: Row(
-                            children: [
-
-                              Container(
-                                padding:
-                                    const EdgeInsets
-                                        .all(
-                                  13,
-                                ),
-                                decoration:
-                                    BoxDecoration(
-                                  color: orange
-                                      .withOpacity(
-                                    .1,
-                                  ),
-                                  borderRadius:
-                                      BorderRadius
-                                          .circular(
-                                    15,
-                                  ),
-                                ),
-                                child:
-                                    const Icon(
-                                  Icons
-                                      .account_balance,
-                                  color: orange,
-                                  size: 30,
-                                ),
-                              ),
-
-                              const SizedBox(
-                                width: 15,
-                              ),
-
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment:
-                                      CrossAxisAlignment
-                                          .start,
-                                  children: [
-
-                                    const Text(
-                                      'إجمالي المبالغ المستحقة',
-                                      style:
-                                          TextStyle(
-                                        color:
-                                            Colors.grey,
-                                      ),
-                                    ),
-
-                                    const SizedBox(
-                                      height: 5,
-                                    ),
-
-                                    Text(
-                                      formatMoney(
-                                        totalBalanceDue,
-                                      ),
-                                      style:
-                                          const TextStyle(
-                                        fontSize: 23,
-                                        fontWeight:
-                                            FontWeight
-                                                .bold,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-
-                      const SizedBox(
-                        height: 28,
-                      ),
-
-                      // =============================
-                      // ACTIVE ORDERS
-                      // =============================
-
-                      Row(
-                        mainAxisAlignment:
-                            MainAxisAlignment
-                                .spaceBetween,
-                        children: [
-
-                          const Text(
-                            'الطلبات النشطة',
-                            style: TextStyle(
-                              fontSize: 21,
-                              fontWeight:
-                                  FontWeight.bold,
-                            ),
-                          ),
-
-                          Container(
-                            padding:
-                                const EdgeInsets
-                                    .symmetric(
-                              horizontal: 10,
-                              vertical: 5,
-                            ),
-                            decoration:
-                                BoxDecoration(
-                              color: orange
-                                  .withOpacity(
-                                .1,
-                              ),
-                              borderRadius:
-                                  BorderRadius
-                                      .circular(
-                                20,
-                              ),
-                            ),
-                            child: Text(
-                              '$activeOrders',
-                              style:
-                                  const TextStyle(
-                                color: orange,
-                                fontWeight:
-                                    FontWeight.bold,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-
-                      const SizedBox(
-                        height: 12,
-                      ),
-
-                      if (activeOrdersList
-                          .isEmpty)
-                        Card(
-                          child: ListTile(
-                            leading:
-                                const Icon(
-                              Icons
-                                  .location_on,
-                              color: orange,
-                            ),
-                            title:
-                                const Text(
-                              'لا توجد طلبات نشطة',
-                            ),
-                            subtitle:
-                                const Text(
-                              'ستظهر الطلبات هنا عند بدء التوصيل',
-                            ),
-                          ),
-                        )
-                      else
-                        ...activeOrdersList
-                            .map(
-                              (order) =>
-                                  _activeOrderCard(
-                                order,
-                              ),
-                            ),
-
-                      const SizedBox(
-                        height: 25,
-                      ),
-
-                      // =============================
-                      // MANAGEMENT
-                      // =============================
-
-                      const Text(
-                        'الإدارة',
-                        style: TextStyle(
-                          fontSize: 21,
-                          fontWeight:
-                              FontWeight.bold,
-                        ),
-                      ),
-
-                      const SizedBox(
-                        height: 12,
-                      ),
-
-                      _adminAction(
-                        Icons.restaurant_menu,
-                        'إدارة المطاعم',
-                        () {
-                          _showComingSoon(
-                            context,
-                            'إدارة المطاعم',
-                          );
-                        },
-                      ),
-
-                      _adminAction(
-                        Icons.people,
-                        'إدارة السائقين',
-                        () {
-                          _showComingSoon(
-                            context,
-                            'إدارة السائقين',
-                          );
-                        },
-                      ),
-
-                      _adminAction(
-                        Icons.receipt_long,
-                        'جميع الطلبات',
-                        () {
-                          _showComingSoon(
-                            context,
-                            'جميع الطلبات',
-                          );
-                        },
-                      ),
-
-                      _adminAction(
-                        Icons.bar_chart,
-                        'التقارير والإحصائيات',
-                        () {
-                          _showComingSoon(
-                            context,
-                            'التقارير والإحصائيات',
-                          );
-                        },
-                      ),
-
-                      _adminAction(
-                        Icons
-                            .account_balance_wallet,
-                        'المبالغ المستحقة',
-                        () {
-                          _showComingSoon(
-                            context,
-                            'المبالغ المستحقة',
-                          );
-                        },
-                      ),
-
-                      const SizedBox(
-                        height: 20,
-                      ),
-                    ],
-                  ),
-      ),
-    );
-  }
-
-  // =========================================================
-  // STAT CARD
-  // =========================================================
-
-  Widget _statCard(
-    IconData icon,
-    String title,
-    String value,
-  ) {
-    return Card(
-      child: Padding(
-        padding:
-            const EdgeInsets.all(
-          15,
-        ),
-        child: Column(
-          mainAxisAlignment:
-              MainAxisAlignment.center,
-          children: [
-
-            Icon(
-              icon,
-              color: orange,
-              size: 30,
-            ),
-
-            const SizedBox(
-              height: 8,
-            ),
-
-            Text(
-              value,
-              style:
-                  const TextStyle(
-                fontSize: 23,
-                fontWeight:
-                    FontWeight.bold,
-              ),
-              textAlign:
-                  TextAlign.center,
-            ),
-
-            const SizedBox(
-              height: 3,
-            ),
-
-            Text(
-              title,
-              style:
-                  const TextStyle(
-                color: Colors.grey,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  // =========================================================
-  // ACTIVE ORDER CARD
-  // =========================================================
-
-  Widget _activeOrderCard(
-    Map<String, dynamic> order,
-  ) {
-    final status =
-        order['status']?.toString();
-
-    final restaurantName =
-        order['restaurant_name']
-                ?.toString() ??
-            'مطعم';
-
-    final driverName =
-        order['driver_name']
-                ?.toString() ??
-            'لم يتم تعيين سائق';
-
-    final customerName =
-        order['customer_name']
-                ?.toString() ??
-            'زبون';
-
-    final address =
-        order['customer_address']
-                ?.toString() ??
-            'العنوان غير متوفر';
-
-    final orderId =
-        order['id']?.toString() ??
-            '-';
-
-    return Card(
-      margin:
-          const EdgeInsets.only(
-        bottom: 10,
-      ),
-      child: Padding(
-        padding:
-            const EdgeInsets.all(
-          15,
-        ),
-        child: Column(
-          crossAxisAlignment:
-              CrossAxisAlignment.start,
-          children: [
-
-            Row(
+      drawer: buildDrawer(),
+
+      body: loading
+          ? const Center(
+              child:
+                  CircularProgressIndicator(),
+            )
+          : IndexedStack(
+              index: selectedPage,
               children: [
-
-                Container(
-                  padding:
-                      const EdgeInsets.all(
-                    9,
-                  ),
-                  decoration:
-                      BoxDecoration(
-                    color: statusColor(
-                      status,
-                    ).withOpacity(
-                      .1,
-                    ),
-                    borderRadius:
-                        BorderRadius.circular(
-                      12,
-                    ),
-                  ),
-                  child: Icon(
-                    Icons.receipt_long,
-                    color:
-                        statusColor(
-                      status,
-                    ),
-                  ),
-                ),
-
-                const SizedBox(
-                  width: 10,
-                ),
-
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment:
-                        CrossAxisAlignment
-                            .start,
-                    children: [
-
-                      Text(
-                        'طلب #$orderId',
-                        style:
-                            const TextStyle(
-                          fontWeight:
-                              FontWeight.bold,
-                        ),
-                      ),
-
-                      Text(
-                        restaurantName,
-                        style:
-                            const TextStyle(
-                          color:
-                              Colors.grey,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-
-                Container(
-                  padding:
-                      const EdgeInsets
-                          .symmetric(
-                    horizontal: 9,
-                    vertical: 5,
-                  ),
-                  decoration:
-                      BoxDecoration(
-                    color: statusColor(
-                      status,
-                    ).withOpacity(
-                      .1,
-                    ),
-                    borderRadius:
-                        BorderRadius.circular(
-                      20,
-                    ),
-                  ),
-                  child: Text(
-                    statusLabel(
-                      status,
-                    ),
-                    style: TextStyle(
-                      color:
-                          statusColor(
-                        status,
-                      ),
-                      fontSize: 12,
-                      fontWeight:
-                          FontWeight.bold,
-                    ),
-                  ),
-                ),
+                buildDashboard(),
+                buildRestaurantsPage(),
+                buildDriversPage(),
+                buildOrdersPage(),
               ],
             ),
-
-            const Divider(
-              height: 25,
-            ),
-
-            Row(
-              children: [
-
-                const Icon(
-                  Icons.person_outline,
-                  size: 20,
-                ),
-
-                const SizedBox(
-                  width: 8,
-                ),
-
-                Expanded(
-                  child: Text(
-                    customerName,
-                  ),
-                ),
-              ],
-            ),
-
-            const SizedBox(
-              height: 8,
-            ),
-
-            Row(
-              crossAxisAlignment:
-                  CrossAxisAlignment.start,
-              children: [
-
-                const Icon(
-                  Icons.location_on_outlined,
-                  size: 20,
-                ),
-
-                const SizedBox(
-                  width: 8,
-                ),
-
-                Expanded(
-                  child: Text(
-                    address,
-                  ),
-                ),
-              ],
-            ),
-
-            const SizedBox(
-              height: 8,
-            ),
-
-            Row(
-              children: [
-
-                const Icon(
-                  Icons.two_wheeler,
-                  size: 20,
-                ),
-
-                const SizedBox(
-                  width: 8,
-                ),
-
-                Expanded(
-                  child: Text(
-                    driverName,
-                  ),
-                ),
-              ],
-            ),
-
-            const SizedBox(
-              height: 12,
-            ),
-
-            Row(
-              mainAxisAlignment:
-                  MainAxisAlignment.end,
-              children: [
-
-                Text(
-                  formatMoney(
-                    order['food_amount'],
-                  ),
-                  style:
-                      const TextStyle(
-                    fontWeight:
-                        FontWeight.bold,
-                    fontSize: 16,
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
     );
   }
-
-  // =========================================================
-  // ADMIN ACTION
-  // =========================================================
-
-  Widget _adminAction(
-    IconData icon,
-    String title,
-    VoidCallback onTap,
-  ) {
-    return Card(
-      margin:
-          const EdgeInsets.only(
-        bottom: 10,
-      ),
-      child: ListTile(
-        onTap: onTap,
-
-        leading: Container(
-          padding:
-              const EdgeInsets.all(
-            9,
-          ),
-          decoration:
-              BoxDecoration(
-            color: orange.withOpacity(
-              .1,
-            ),
-            borderRadius:
-                BorderRadius.circular(
-              12,
-            ),
-          ),
-          child: Icon(
-            icon,
-            color: orange,
-          ),
-        ),
-
-        title: Text(
-          title,
-          style:
-              const TextStyle(
-            fontWeight:
-                FontWeight.bold,
-          ),
-        ),
-
-        trailing:
-            const Icon(
-          Icons.arrow_back_ios_new,
-          size: 16,
-        ),
-      ),
-    );
-  }
-
-  // =========================================================
-  // COMING SOON
-  // =========================================================
-
-  void _showComingSoon(
-    BuildContext context,
-    String title,
-  ) {
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(
-      SnackBar(
-        content: Text(
-          '$title ستكون في الخطوة التالية',
-        ),
-      ),
-    );
-  }
-
-  // =========================================================
-  // DISPOSE
-  // =========================================================
 
   @override
   void dispose() {

@@ -6,20 +6,23 @@ const {
   initializeNotificationService
 } = require("../services/notification.service");
 
-// =========================================================
-// INITIALIZE SOCKET.IO
-// =========================================================
+
+/* =========================================================
+   SOCKET INITIALIZATION
+========================================================= */
 
 function initializeSocket(io) {
 
   initializeNotificationService(io);
 
-  // -------------------------------------------------------
-  // SOCKET AUTHENTICATION
-  // -------------------------------------------------------
+
+  /* =======================================================
+     SOCKET AUTHENTICATION
+  ======================================================= */
 
   io.use(async (socket, next) => {
     try {
+
       const token =
         socket.handshake.auth?.token;
 
@@ -31,57 +34,114 @@ function initializeSocket(io) {
         );
       }
 
+
       const decoded =
         jwt.verify(
           token,
           process.env.JWT_SECRET
         );
 
-      if (decoded.role !== "driver") {
-        return next(
-          new Error(
-            "Driver access required"
-          )
-        );
+
+      /* =====================================================
+         DRIVER
+      ===================================================== */
+
+      if (decoded.role === "driver") {
+
+        const [drivers] =
+          await pool.execute(
+            `
+            SELECT
+              id,
+              user_id
+            FROM drivers
+            WHERE user_id = ?
+            LIMIT 1
+            `,
+            [decoded.id]
+          );
+
+
+        if (drivers.length === 0) {
+          return next(
+            new Error(
+              "Driver profile not found"
+            )
+          );
+        }
+
+
+        socket.user = decoded;
+
+        socket.driver = {
+          id: drivers[0].id,
+          user_id: drivers[0].user_id
+        };
+
+
+        return next();
       }
 
-      // ---------------------------------------------------
-      // GET DRIVER ID FROM USER ID
-      // ---------------------------------------------------
 
-      const [drivers] =
-        await pool.execute(
-          `
-          SELECT
-            id,
-            user_id
-          FROM drivers
-          WHERE user_id = ?
-          LIMIT 1
-          `,
-          [decoded.id]
-        );
+      /* =====================================================
+         RESTAURANT
+      ===================================================== */
 
-      if (drivers.length === 0) {
-        return next(
-          new Error(
-            "Driver profile not found"
-          )
-        );
+      if (decoded.role === "restaurant") {
+
+        const [restaurants] =
+          await pool.execute(
+            `
+            SELECT
+              id,
+              user_id
+            FROM restaurants
+            WHERE user_id = ?
+            LIMIT 1
+            `,
+            [decoded.id]
+          );
+
+
+        if (restaurants.length === 0) {
+          return next(
+            new Error(
+              "Restaurant profile not found"
+            )
+          );
+        }
+
+
+        socket.user = decoded;
+
+        socket.restaurant = {
+          id: restaurants[0].id,
+          user_id:
+            restaurants[0].user_id
+        };
+
+
+        return next();
       }
 
-      // ---------------------------------------------------
-      // SAVE AUTHENTICATED DATA
-      // ---------------------------------------------------
 
-      socket.user = decoded;
+      /* =====================================================
+         ADMIN
+      ===================================================== */
 
-      socket.driver = {
-        id: drivers[0].id,
-        user_id: drivers[0].user_id
-      };
+      if (decoded.role === "admin") {
 
-      next();
+        socket.user = decoded;
+
+        return next();
+      }
+
+
+      return next(
+        new Error(
+          "Invalid user role"
+        )
+      );
 
     } catch (error) {
 
@@ -90,7 +150,7 @@ function initializeSocket(io) {
         error
       );
 
-      next(
+      return next(
         new Error(
           "Invalid or expired token"
         )
@@ -98,9 +158,10 @@ function initializeSocket(io) {
     }
   });
 
-  // -------------------------------------------------------
-  // CONNECTION
-  // -------------------------------------------------------
+
+  /* =========================================================
+     CONNECTION
+  ========================================================= */
 
   io.on(
     "connection",
@@ -109,33 +170,96 @@ function initializeSocket(io) {
       console.log(
         `Socket connected: ${socket.id} - ` +
         `User ${socket.user.id} - ` +
-        `Driver ${socket.driver.id}`
+        `Role ${socket.user.role}`
       );
 
-      // ---------------------------------------------------
-      // DRIVER ROOM
-      // ---------------------------------------------------
 
-      socket.on(
-        "driver_join",
-        () => {
+      /* =====================================================
+         DRIVER
+      ===================================================== */
 
-          const driverId =
-            socket.driver.id;
+      if (
+        socket.user.role ===
+        "driver"
+      ) {
 
-          socket.join(
-            `driver_${driverId}`
-          );
+        const driverId =
+          socket.driver.id;
 
-          console.log(
-            `Driver ${driverId} joined socket room`
-          );
-        }
-      );
 
-      // ---------------------------------------------------
-      // DISCONNECT
-      // ---------------------------------------------------
+        socket.join(
+          `driver_${driverId}`
+        );
+
+
+        console.log(
+          `Driver ${driverId} joined room`
+        );
+
+
+        socket.on(
+          "driver_join",
+          () => {
+
+            socket.join(
+              `driver_${driverId}`
+            );
+
+            console.log(
+              `Driver ${driverId} joined socket room`
+            );
+          }
+        );
+      }
+
+
+      /* =====================================================
+         RESTAURANT
+      ===================================================== */
+
+      if (
+        socket.user.role ===
+        "restaurant"
+      ) {
+
+        const restaurantId =
+          socket.restaurant.id;
+
+
+        socket.join(
+          `restaurant_${restaurantId}`
+        );
+
+
+        console.log(
+          `Restaurant ${restaurantId} joined room`
+        );
+      }
+
+
+      /* =====================================================
+         ADMIN
+      ===================================================== */
+
+      if (
+        socket.user.role ===
+        "admin"
+      ) {
+
+        socket.join(
+          "admins"
+        );
+
+
+        console.log(
+          `Admin ${socket.user.id} joined admin room`
+        );
+      }
+
+
+      /* =====================================================
+         DISCONNECT
+      ===================================================== */
 
       socket.on(
         "disconnect",
@@ -143,13 +267,15 @@ function initializeSocket(io) {
 
           console.log(
             `Socket disconnected: ${socket.id} - ` +
-            `Driver ${socket.driver.id}`
+            `User ${socket.user.id} - ` +
+            `Role ${socket.user.role}`
           );
         }
       );
     }
   );
 }
+
 
 module.exports = {
   initializeSocket

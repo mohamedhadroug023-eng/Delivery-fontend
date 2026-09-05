@@ -1,44 +1,44 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../services/api_service.dart';
 
-class RestaurantScreen extends StatefulWidget {
-  const RestaurantScreen({super.key});
+class AdminScreen extends StatefulWidget {
+  const AdminScreen({super.key});
 
   @override
-  State<RestaurantScreen> createState() =>
-      _RestaurantScreenState();
+  State<AdminScreen> createState() =>
+      _AdminScreenState();
 }
 
-class _RestaurantScreenState
-    extends State<RestaurantScreen> {
+class _AdminScreenState extends State<AdminScreen> {
   static const orange = Color(0xFFFF6B00);
 
   bool loading = true;
-  bool creatingOrder = false;
-  bool verifyingOtp = false;
 
-  Map<String, dynamic>? restaurant;
-  List<Map<String, dynamic>> orders = [];
+  Map<String, dynamic> statistics = {};
+
+  List<Map<String, dynamic>> activeOrders = [];
+  List<Map<String, dynamic>> restaurants = [];
+  List<Map<String, dynamic>> drivers = [];
+  List<Map<String, dynamic>> allOrders = [];
 
   Timer? _refreshTimer;
+
+  int selectedPage = 0;
 
   @override
   void initState() {
     super.initState();
 
-    loadData();
+    loadDashboard();
 
     _refreshTimer = Timer.periodic(
       const Duration(seconds: 5),
       (_) {
-        if (!loading &&
-            !creatingOrder &&
-            !verifyingOtp) {
-          loadData(
+        if (!loading) {
+          loadDashboard(
             showLoading: false,
           );
         }
@@ -53,10 +53,10 @@ class _RestaurantScreenState
   }
 
   // =========================================================
-  // LOAD DATA
+  // LOAD DASHBOARD
   // =========================================================
 
-  Future<void> loadData({
+  Future<void> loadDashboard({
     bool showLoading = true,
   }) async {
     if (showLoading && mounted) {
@@ -66,40 +66,35 @@ class _RestaurantScreenState
     }
 
     try {
-      final profileResponse =
+      final response =
           await ApiService.get(
-        '/restaurant/profile',
-      );
-
-      final ordersResponse =
-          await ApiService.get(
-        '/restaurant/orders',
+        '/admin/dashboard',
       );
 
       if (!mounted) return;
 
-      final profileData =
-          Map<String, dynamic>.from(
-        profileResponse['restaurant'] ??
-            {},
-      );
+      final rawStatistics =
+          response['statistics'] ?? {};
 
-      final rawOrders =
-          ordersResponse['orders'] ?? [];
+      final rawActiveOrders =
+          response['active_orders'] ?? [];
 
-      final ordersData =
-          List<Map<String, dynamic>>.from(
-        rawOrders.map(
-          (order) =>
-              Map<String, dynamic>.from(
-            order,
+      setState(() {
+        statistics =
+            Map<String, dynamic>.from(
+          rawStatistics,
+        );
+
+        activeOrders =
+            List<Map<String, dynamic>>.from(
+          rawActiveOrders.map(
+            (order) =>
+                Map<String, dynamic>.from(
+              order,
+            ),
           ),
-        ),
-      );
+        );
 
-      setState(() {
-        restaurant = profileData;
-        orders = ordersData;
         loading = false;
       });
     } catch (error) {
@@ -109,249 +104,141 @@ class _RestaurantScreenState
         loading = false;
       });
 
-      if (showLoading) {
-        _showError(error);
-      }
+      _showError(error);
     }
   }
 
   // =========================================================
-  // CREATE ORDER
+  // LOAD RESTAURANTS
   // =========================================================
 
-  Future<void> createOrder({
-    required String customerName,
-    required String customerPhone,
-    required String customerAddress,
-    required String latitude,
-    required String longitude,
-    required String foodAmount,
-    required String driverFee,
-  }) async {
-    if (customerAddress.trim().isEmpty ||
-        latitude.trim().isEmpty ||
-        longitude.trim().isEmpty ||
-        foodAmount.trim().isEmpty) {
-      _showMessage(
-        'يرجى إدخال جميع البيانات المطلوبة',
-      );
-      return;
-    }
-
-    final lat =
-        double.tryParse(latitude.trim());
-
-    final lng =
-        double.tryParse(longitude.trim());
-
-    final amount =
-        double.tryParse(
-      foodAmount.trim(),
-    );
-
-    final fee = double.tryParse(
-      driverFee.trim().isEmpty
-          ? '0'
-          : driverFee.trim(),
-    );
-
-    if (lat == null ||
-        lng == null ||
-        amount == null ||
-        fee == null) {
-      _showMessage(
-        'يرجى التأكد من صحة الأرقام',
-      );
-      return;
-    }
-
-    if (lat < -90 ||
-        lat > 90 ||
-        lng < -180 ||
-        lng > 180) {
-      _showMessage(
-        'إحداثيات الموقع غير صحيحة',
-      );
-      return;
-    }
-
-    if (amount <= 0 ||
-        fee < 0) {
-      _showMessage(
-        'قيمة الطلب أو أجرة السائق غير صحيحة',
-      );
-      return;
-    }
-
-    setState(() {
-      creatingOrder = true;
-    });
-
+  Future<void> loadRestaurants() async {
     try {
       final response =
-          await ApiService.post(
-        '/orders',
-        {
-          'customer_name':
-              customerName.trim(),
-          'customer_phone':
-              customerPhone.trim(),
-          'customer_address':
-              customerAddress.trim(),
-          'customer_latitude':
-              lat,
-          'customer_longitude':
-              lng,
-          'food_amount':
-              amount,
-          'driver_fee':
-              fee,
-        },
+          await ApiService.get(
+        '/admin/restaurants',
       );
 
       if (!mounted) return;
 
-      if (response['success'] != true) {
-        throw Exception(
-          response['message'] ??
-              'فشل إنشاء الطلب',
+      final raw =
+          response['restaurants'] ?? [];
+
+      setState(() {
+        restaurants =
+            List<Map<String, dynamic>>.from(
+          raw.map(
+            (item) =>
+                Map<String, dynamic>.from(
+              item,
+            ),
+          ),
         );
-      }
-
-      // إغلاق نافذة إنشاء الطلب
-      Navigator.of(context).pop();
-
-      _showMessage(
-        'تم نشر الطلب بنجاح 🚀',
-      );
-
-      await loadData(
-        showLoading: false,
-      );
+      });
     } catch (error) {
       if (!mounted) return;
 
       _showError(error);
-    } finally {
-      if (mounted) {
-        setState(() {
-          creatingOrder = false;
-        });
-      }
     }
   }
 
   // =========================================================
-  // VERIFY PICKUP OTP
+  // LOAD DRIVERS
   // =========================================================
 
-  Future<bool> verifyPickupOtp({
-    required int orderId,
-    required String otp,
-  }) async {
-    final cleanOtp =
-        otp.trim();
-
-    if (!RegExp(
-      r'^\d{4}$',
-    ).hasMatch(cleanOtp)) {
-      _showMessage(
-        'رمز OTP يجب أن يتكون من 4 أرقام',
+  Future<void> loadDrivers() async {
+    try {
+      final response =
+          await ApiService.get(
+        '/admin/drivers',
       );
 
-      return false;
-    }
+      if (!mounted) return;
 
+      final raw =
+          response['drivers'] ?? [];
+
+      setState(() {
+        drivers =
+            List<Map<String, dynamic>>.from(
+          raw.map(
+            (item) =>
+                Map<String, dynamic>.from(
+              item,
+            ),
+          ),
+        );
+      });
+    } catch (error) {
+      if (!mounted) return;
+
+      _showError(error);
+    }
+  }
+
+  // =========================================================
+  // LOAD ALL ORDERS
+  // =========================================================
+
+  Future<void> loadAllOrders() async {
+    try {
+      final response =
+          await ApiService.get(
+        '/admin/orders',
+      );
+
+      if (!mounted) return;
+
+      final raw =
+          response['orders'] ?? [];
+
+      setState(() {
+        allOrders =
+            List<Map<String, dynamic>>.from(
+          raw.map(
+            (item) =>
+                Map<String, dynamic>.from(
+              item,
+            ),
+          ),
+        );
+      });
+    } catch (error) {
+      if (!mounted) return;
+
+      _showError(error);
+    }
+  }
+
+  // =========================================================
+  // PAGE SELECTION
+  // =========================================================
+
+  Future<void> changePage(
+    int page,
+  ) async {
     setState(() {
-      verifyingOtp = true;
+      selectedPage = page;
+      loading = true;
     });
 
     try {
-      final response =
-          await ApiService.post(
-        '/restaurant/orders/verify-pickup',
-        {
-          'order_id':
-              orderId,
-          'otp':
-              cleanOtp,
-        },
-      );
-
-      if (!mounted) return false;
-
-      if (response['success'] != true) {
-        throw Exception(
-          response['message'] ??
-              'فشل تأكيد الاستلام',
+      if (page == 0) {
+        await loadDashboard(
+          showLoading: false,
         );
+      } else if (page == 1) {
+        await loadRestaurants();
+      } else if (page == 2) {
+        await loadDrivers();
+      } else if (page == 3) {
+        await loadAllOrders();
       }
-
-      _showMessage(
-        'تم تأكيد استلام الطلب بنجاح ✅',
-      );
-
-      await loadData(
-        showLoading: false,
-      );
-
-      return true;
-    } catch (error) {
-      if (!mounted) return false;
-
-      _showError(error);
-
-      return false;
     } finally {
       if (mounted) {
         setState(() {
-          verifyingOtp = false;
+          loading = false;
         });
-      }
-    }
-  }
-
-  // =========================================================
-  // OPEN GOOGLE MAPS
-  // =========================================================
-
-  Future<void> _openMaps({
-    required double? latitude,
-    required double? longitude,
-  }) async {
-    if (latitude == null ||
-        longitude == null) {
-      _showMessage(
-        'إحداثيات الموقع غير متوفرة',
-      );
-      return;
-    }
-
-    final uri = Uri.parse(
-      'https://www.google.com/maps/dir/'
-      '?api=1'
-      '&destination=$latitude,$longitude'
-      '&travelmode=driving',
-    );
-
-    try {
-      final opened =
-          await launchUrl(
-        uri,
-        mode:
-            LaunchMode.externalApplication,
-      );
-
-      if (!opened && mounted) {
-        _showMessage(
-          'تعذر فتح Google Maps',
-        );
-      }
-    } catch (_) {
-      if (mounted) {
-        _showMessage(
-          'حدث خطأ أثناء فتح الخريطة',
-        );
       }
     }
   }
@@ -359,6 +246,30 @@ class _RestaurantScreenState
   // =========================================================
   // HELPERS
   // =========================================================
+
+  double _number(
+    dynamic value,
+  ) {
+    return double.tryParse(
+          value?.toString() ?? '',
+        ) ??
+        0;
+  }
+
+  int _integer(
+    dynamic value,
+  ) {
+    return int.tryParse(
+          value?.toString() ?? '',
+        ) ??
+        0;
+  }
+
+  String _money(
+    dynamic value,
+  ) {
+    return '${_number(value).toStringAsFixed(3)} د.ت';
+  }
 
   void _showMessage(
     String message,
@@ -391,69 +302,6 @@ class _RestaurantScreenState
     _showMessage(message);
   }
 
-  bool _isActiveOrder(
-    Map<String, dynamic> order,
-  ) {
-    final status =
-        order['status']
-            ?.toString();
-
-    return [
-      'pending',
-      'dispatching',
-      'offered',
-      'accepted',
-      'driver_arrived',
-      'pickup_verified',
-      'picked_up',
-      'delivering',
-    ].contains(status);
-  }
-
-  int get todayOrdersCount {
-    final now =
-        DateTime.now();
-
-    return orders.where(
-      (order) {
-        final createdAt =
-            DateTime.tryParse(
-          order['created_at']
-                  ?.toString() ??
-              '',
-        );
-
-        if (createdAt == null) {
-          return false;
-        }
-
-        return createdAt.year ==
-                now.year &&
-            createdAt.month ==
-                now.month &&
-            createdAt.day ==
-                now.day;
-      },
-    ).length;
-  }
-
-  int get activeOrdersCount {
-    return orders
-        .where(
-          _isActiveOrder,
-        )
-        .length;
-  }
-
-  List<Map<String, dynamic>>
-      get activeOrders {
-    return orders
-        .where(
-          _isActiveOrder,
-        )
-        .toList();
-  }
-
   // =========================================================
   // BUILD
   // =========================================================
@@ -465,8 +313,8 @@ class _RestaurantScreenState
     return Scaffold(
       appBar: AppBar(
         title:
-            const Text(
-          'لوحة المطعم',
+            Text(
+          _pageTitle(),
         ),
         actions: [
           IconButton(
@@ -478,7 +326,7 @@ class _RestaurantScreenState
                 loading
                     ? null
                     : () =>
-                        loadData(),
+                        _refreshCurrentPage(),
           ),
           IconButton(
             icon:
@@ -489,270 +337,800 @@ class _RestaurantScreenState
           ),
         ],
       ),
-      body: loading
-          ? const Center(
-              child:
-                  CircularProgressIndicator(
-                color: orange,
-              ),
-            )
-          : RefreshIndicator(
-              onRefresh: () =>
-                  loadData(
-                showLoading:
-                    false,
-              ),
-              child:
-                  SingleChildScrollView(
-                physics:
-                    const AlwaysScrollableScrollPhysics(),
-                padding:
-                    const EdgeInsets.all(
-                  16,
+
+      drawer:
+          _buildDrawer(),
+
+      body:
+          loading
+              ? const Center(
+                  child:
+                      CircularProgressIndicator(
+                    color: orange,
+                  ),
+                )
+              : RefreshIndicator(
+                  onRefresh:
+                      _refreshCurrentPage,
+                  child:
+                      _buildCurrentPage(),
                 ),
-                child:
-                    Column(
-                  crossAxisAlignment:
-                      CrossAxisAlignment
-                          .start,
-                  children: [
+    );
+  }
 
-                    Text(
-                      restaurant?[
-                                  'name']
-                              ?.toString() ??
-                          'المطعم',
-                      style:
-                          const TextStyle(
-                        fontSize: 25,
-                        fontWeight:
-                            FontWeight.bold,
+  String _pageTitle() {
+    switch (selectedPage) {
+      case 1:
+        return 'إدارة المطاعم';
+      case 2:
+        return 'إدارة السائقين';
+      case 3:
+        return 'جميع الطلبات';
+      default:
+        return 'لوحة الإدارة';
+    }
+  }
+
+  Future<void>
+      _refreshCurrentPage() async {
+    if (selectedPage == 0) {
+      await loadDashboard(
+        showLoading: false,
+      );
+    } else if (selectedPage == 1) {
+      await loadRestaurants();
+    } else if (selectedPage == 2) {
+      await loadDrivers();
+    } else if (selectedPage == 3) {
+      await loadAllOrders();
+    }
+  }
+
+  // =========================================================
+  // DRAWER
+  // =========================================================
+
+  Widget _buildDrawer() {
+    return Drawer(
+      child:
+          SafeArea(
+        child:
+            Column(
+          children: [
+
+            Container(
+              width:
+                  double.infinity,
+              padding:
+                  const EdgeInsets
+                      .all(
+                22,
+              ),
+              child:
+                  Column(
+                children: [
+
+                  Container(
+                    width: 70,
+                    height: 70,
+                    decoration:
+                        BoxDecoration(
+                      color:
+                          orange,
+                      borderRadius:
+                          BorderRadius.circular(
+                        20,
                       ),
                     ),
-
-                    const SizedBox(
-                      height: 5,
+                    child:
+                        const Icon(
+                      Icons
+                          .local_shipping,
+                      color:
+                          Colors.white,
+                      size:
+                          38,
                     ),
+                  ),
 
-                    const Text(
-                      'ملخص اليوم',
-                      style:
-                          TextStyle(
-                        color:
-                            Colors.grey,
-                      ),
+                  const SizedBox(
+                    height: 12,
+                  ),
+
+                  const Text(
+                    'HADROUG DELIVERY',
+                    style:
+                        TextStyle(
+                      fontSize:
+                          18,
+                      fontWeight:
+                          FontWeight.bold,
                     ),
+                  ),
 
-                    const SizedBox(
-                      height: 20,
+                  const SizedBox(
+                    height: 4,
+                  ),
+
+                  const Text(
+                    'لوحة الإدارة',
+                    style:
+                        TextStyle(
+                      color:
+                          Colors.grey,
                     ),
-
-                    Row(
-                      children: [
-                        Expanded(
-                          child:
-                              _statCard(
-                            icon: Icons
-                                .receipt_long,
-                            title:
-                                'طلبات اليوم',
-                            value:
-                                todayOrdersCount
-                                    .toString(),
-                          ),
-                        ),
-                        const SizedBox(
-                          width: 12,
-                        ),
-                        Expanded(
-                          child:
-                              _statCard(
-                            icon: Icons
-                                .local_shipping,
-                            title:
-                                'طلبات نشطة',
-                            value:
-                                activeOrdersCount
-                                    .toString(),
-                          ),
-                        ),
-                      ],
-                    ),
-
-                    const SizedBox(
-                      height: 12,
-                    ),
-
-                    _moneyCard(),
-
-                    const SizedBox(
-                      height: 25,
-                    ),
-
-                    SizedBox(
-                      width:
-                          double.infinity,
-                      height: 58,
-                      child:
-                          ElevatedButton
-                              .icon(
-                        onPressed:
-                            creatingOrder
-                                ? null
-                                : () {
-                                    _showNewOrderDialog(
-                                      context,
-                                    );
-                                  },
-                        icon:
-                            const Icon(
-                          Icons.add,
-                        ),
-                        label:
-                            const Text(
-                          'إنشاء طلب توصيل',
-                          style:
-                              TextStyle(
-                            fontSize:
-                                17,
-                            fontWeight:
-                                FontWeight
-                                    .bold,
-                          ),
-                        ),
-                      ),
-                    ),
-
-                    const SizedBox(
-                      height: 28,
-                    ),
-
-                    const Text(
-                      'الطلبات الحالية',
-                      style:
-                          TextStyle(
-                        fontSize: 21,
-                        fontWeight:
-                            FontWeight.bold,
-                      ),
-                    ),
-
-                    const SizedBox(
-                      height: 12,
-                    ),
-
-                    if (activeOrders
-                        .isEmpty)
-                      _emptyOrdersCard()
-                    else
-                      ...activeOrders.map(
-                        (order) =>
-                            Padding(
-                          padding:
-                              const EdgeInsets
-                                  .only(
-                            bottom: 12,
-                          ),
-                          child:
-                              _orderCard(
-                            order,
-                          ),
-                        ),
-                      ),
-
-                    const SizedBox(
-                      height: 15,
-                    ),
-
-                    const Text(
-                      'إجراءات سريعة',
-                      style:
-                          TextStyle(
-                        fontSize: 21,
-                        fontWeight:
-                            FontWeight.bold,
-                      ),
-                    ),
-
-                    const SizedBox(
-                      height: 12,
-                    ),
-
-                    Row(
-                      children: [
-                        Expanded(
-                          child:
-                              _quickAction(
-                            icon: Icons
-                                .history,
-                            title:
-                                'سجل الطلبات',
-                            onTap:
-                                _showHistoryDialog,
-                          ),
-                        ),
-                        const SizedBox(
-                          width: 10,
-                        ),
-                        Expanded(
-                          child:
-                              _quickAction(
-                            icon: Icons
-                                .bar_chart,
-                            title:
-                                'التقارير',
-                            onTap: () {},
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ),
+
+            const Divider(),
+
+            _drawerItem(
+              icon:
+                  Icons.dashboard,
+              title:
+                  'لوحة التحكم',
+              page:
+                  0,
+            ),
+
+            _drawerItem(
+              icon:
+                  Icons.restaurant,
+              title:
+                  'إدارة المطاعم',
+              page:
+                  1,
+            ),
+
+            _drawerItem(
+              icon:
+                  Icons.two_wheeler,
+              title:
+                  'إدارة السائقين',
+              page:
+                  2,
+            ),
+
+            _drawerItem(
+              icon:
+                  Icons.receipt_long,
+              title:
+                  'جميع الطلبات',
+              page:
+                  3,
+            ),
+
+            const Spacer(),
+
+            const Divider(),
+
+            ListTile(
+              leading:
+                  const Icon(
+                Icons.bar_chart,
+              ),
+              title:
+                  const Text(
+                'التقارير',
+              ),
+              onTap: () {
+                Navigator.pop(
+                  context,
+                );
+
+                _showMessage(
+                  'قسم التقارير قادم في الخطوة التالية',
+                );
+              },
+            ),
+
+            ListTile(
+              leading:
+                  const Icon(
+                Icons.logout,
+                color:
+                    Colors.red,
+              ),
+              title:
+                  const Text(
+                'تسجيل الخروج',
+              ),
+              onTap: () {
+                Navigator.pop(
+                  context,
+                );
+
+                _showMessage(
+                  'تسجيل الخروج سنربطه مع AuthService لاحقًا',
+                );
+              },
+            ),
+
+            const SizedBox(
+              height: 10,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _drawerItem({
+    required IconData icon,
+    required String title,
+    required int page,
+  }) {
+    final selected =
+        selectedPage == page;
+
+    return ListTile(
+      selected:
+          selected,
+      selectedColor:
+          orange,
+      leading:
+          Icon(icon),
+      title:
+          Text(title),
+      onTap: () async {
+        Navigator.pop(
+          context,
+        );
+
+        await changePage(
+          page,
+        );
+      },
     );
   }
 
   // =========================================================
-  // STAT CARD
+  // CURRENT PAGE
   // =========================================================
 
-  Widget _statCard({
-    required IconData icon,
-    required String title,
-    required String value,
-  }) {
-    return Card(
-      child: Padding(
-        padding:
-            const EdgeInsets.all(
-          16,
-        ),
-        child:
-            Column(
+  Widget _buildCurrentPage() {
+    switch (selectedPage) {
+      case 1:
+        return _restaurantsPage();
+
+      case 2:
+        return _driversPage();
+
+      case 3:
+        return _ordersPage();
+
+      default:
+        return _dashboardPage();
+    }
+  }
+
+  // =========================================================
+  // DASHBOARD
+  // =========================================================
+
+  Widget _dashboardPage() {
+    final restaurantCount =
+        _integer(
+      statistics['restaurants'],
+    );
+
+    final driverCount =
+        _integer(
+      statistics['drivers'],
+    );
+
+    final onlineDrivers =
+        _integer(
+      statistics[
+          'online_drivers'],
+    );
+
+    final todayOrders =
+        _integer(
+      statistics[
+          'today_orders'],
+    );
+
+    final todayRevenue =
+        statistics[
+            'today_revenue'] ??
+        0;
+
+    final balanceDue =
+        statistics[
+            'total_balance_due'] ??
+        0;
+
+    return SingleChildScrollView(
+      physics:
+          const AlwaysScrollableScrollPhysics(),
+      padding:
+          const EdgeInsets.all(
+        16,
+      ),
+      child:
+          Column(
+        crossAxisAlignment:
+            CrossAxisAlignment
+                .start,
+        children: [
+
+          const Text(
+            'نظرة عامة',
+            style:
+                TextStyle(
+              fontSize: 25,
+              fontWeight:
+                  FontWeight.bold,
+            ),
+          ),
+
+          const SizedBox(
+            height: 5,
+          ),
+
+          const Text(
+            'بيانات النظام في الوقت الحالي',
+            style:
+                TextStyle(
+              color:
+                  Colors.grey,
+            ),
+          ),
+
+          const SizedBox(
+            height: 20,
+          ),
+
+          GridView.count(
+            crossAxisCount:
+                2,
+            shrinkWrap:
+                true,
+            physics:
+                const NeverScrollableScrollPhysics(),
+            mainAxisSpacing:
+                12,
+            crossAxisSpacing:
+                12,
+            childAspectRatio:
+                1.35,
+            children: [
+
+              _statCard(
+                icon:
+                    Icons.restaurant,
+                title:
+                    'المطاعم',
+                value:
+                    restaurantCount
+                        .toString(),
+              ),
+
+              _statCard(
+                icon:
+                    Icons.two_wheeler,
+                title:
+                    'السائقون',
+                value:
+                    driverCount
+                        .toString(),
+              ),
+
+              _statCard(
+                icon:
+                    Icons
+                        .online_prediction,
+                title:
+                    'السائقون المتصلون',
+                value:
+                    onlineDrivers
+                        .toString(),
+              ),
+
+              _statCard(
+                icon:
+                    Icons.receipt_long,
+                title:
+                    'طلبات اليوم',
+                value:
+                    todayOrders
+                        .toString(),
+              ),
+            ],
+          ),
+
+          const SizedBox(
+            height: 15,
+          ),
+
+          _financeCard(
+            icon:
+                Icons.payments,
+            title:
+                'دخل اليوم',
+            value:
+                _money(
+              todayRevenue,
+            ),
+          ),
+
+          const SizedBox(
+            height: 12,
+          ),
+
+          _financeCard(
+            icon:
+                Icons.account_balance_wallet,
+            title:
+                'إجمالي المبالغ المستحقة',
+            value:
+                _money(
+              balanceDue,
+            ),
+          ),
+
+          const SizedBox(
+            height: 28,
+          ),
+
+          Row(
+            mainAxisAlignment:
+                MainAxisAlignment
+                    .spaceBetween,
+            children: [
+
+              const Text(
+                'الطلبات النشطة',
+                style:
+                    TextStyle(
+                  fontSize: 21,
+                  fontWeight:
+                      FontWeight.bold,
+                ),
+              ),
+
+              Text(
+                '${activeOrders.length}',
+                style:
+                    const TextStyle(
+                  color:
+                      orange,
+                  fontWeight:
+                      FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
+
+          const SizedBox(
+            height: 12,
+          ),
+
+          if (activeOrders.isEmpty)
+            _emptyCard(
+              icon:
+                  Icons
+                      .local_shipping_outlined,
+              text:
+                  'لا توجد طلبات نشطة',
+            )
+          else
+            ...activeOrders.map(
+              (order) =>
+                  Padding(
+                padding:
+                    const EdgeInsets
+                        .only(
+                  bottom: 10,
+                ),
+                child:
+                    _activeOrderCard(
+                  order,
+                ),
+              ),
+            ),
+
+          const SizedBox(
+            height: 20,
+          ),
+        ],
+      ),
+    );
+  }
+
+  // =========================================================
+  // RESTAURANTS
+  // =========================================================
+
+  Widget _restaurantsPage() {
+    return ListView(
+      physics:
+          const AlwaysScrollableScrollPhysics(),
+      padding:
+          const EdgeInsets.all(
+        16,
+      ),
+      children: [
+
+        Row(
+          mainAxisAlignment:
+              MainAxisAlignment
+                  .spaceBetween,
           children: [
-            Icon(
-              icon,
-              color: orange,
-              size: 30,
-            ),
-            const SizedBox(
-              height: 8,
-            ),
-            Text(
-              value,
+
+            const Text(
+              'المطاعم',
               style:
-                  const TextStyle(
-                fontSize: 25,
+                  TextStyle(
+                fontSize: 24,
                 fontWeight:
                     FontWeight.bold,
               ),
             ),
+
             Text(
-              title,
+              '${restaurants.length}',
               style:
                   const TextStyle(
-                color: Colors.grey,
+                color:
+                    orange,
+                fontWeight:
+                    FontWeight.bold,
+              ),
+            ),
+          ],
+        ),
+
+        const SizedBox(
+          height: 15,
+        ),
+
+        if (restaurants.isEmpty)
+          _emptyCard(
+            icon:
+                Icons.restaurant,
+            text:
+                'لا توجد مطاعم',
+          )
+        else
+          ...restaurants.map(
+            (restaurant) =>
+                Padding(
+              padding:
+                  const EdgeInsets
+                      .only(
+                bottom: 12,
+              ),
+              child:
+                  _restaurantCard(
+                restaurant,
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _restaurantCard(
+    Map<String, dynamic> restaurant,
+  ) {
+    final name =
+        restaurant['name']
+                ?.toString() ??
+            'مطعم';
+
+    final address =
+        restaurant['address']
+                ?.toString() ??
+            '';
+
+    final phone =
+        restaurant['phone']
+                ?.toString() ??
+            '';
+
+    final balance =
+        restaurant[
+            'balance_due'];
+
+    final active =
+        restaurant[
+                'is_active'] ==
+            true ||
+        restaurant[
+                'is_active']
+            .toString() ==
+            '1';
+
+    return Card(
+      child:
+          Padding(
+        padding:
+            const EdgeInsets
+                .all(
+          16,
+        ),
+        child:
+            Column(
+          crossAxisAlignment:
+              CrossAxisAlignment
+                  .start,
+          children: [
+
+            Row(
+              children: [
+
+                Container(
+                  padding:
+                      const EdgeInsets
+                          .all(
+                    12,
+                  ),
+                  decoration:
+                      BoxDecoration(
+                    color:
+                        orange.withOpacity(
+                      .1,
+                    ),
+                    borderRadius:
+                        BorderRadius.circular(
+                      14,
+                    ),
+                  ),
+                  child:
+                      const Icon(
+                    Icons.restaurant,
+                    color:
+                        orange,
+                  ),
+                ),
+
+                const SizedBox(
+                  width: 12,
+                ),
+
+                Expanded(
+                  child:
+                      Column(
+                    crossAxisAlignment:
+                        CrossAxisAlignment
+                            .start,
+                    children: [
+
+                      Text(
+                        name,
+                        style:
+                            const TextStyle(
+                          fontSize:
+                              17,
+                          fontWeight:
+                              FontWeight.bold,
+                        ),
+                      ),
+
+                      if (phone
+                          .isNotEmpty)
+                        Text(
+                          phone,
+                          style:
+                              const TextStyle(
+                            color:
+                                Colors.grey,
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+
+                _activeBadge(
+                  active,
+                ),
+              ],
+            ),
+
+            const SizedBox(
+              height: 15,
+            ),
+
+            if (address.isNotEmpty)
+              Row(
+                crossAxisAlignment:
+                    CrossAxisAlignment
+                        .start,
+                children: [
+                  const Icon(
+                    Icons.location_on,
+                    size: 20,
+                    color: orange,
+                  ),
+                  const SizedBox(
+                    width: 7,
+                  ),
+                  Expanded(
+                    child:
+                        Text(address),
+                  ),
+                ],
+              ),
+
+            const SizedBox(
+              height: 12,
+            ),
+
+            Container(
+              width:
+                  double.infinity,
+              padding:
+                  const EdgeInsets
+                      .all(
+                12,
+              ),
+              decoration:
+                  BoxDecoration(
+                color:
+                    Colors.grey.shade100,
+                borderRadius:
+                    BorderRadius.circular(
+                  12,
+                ),
+              ),
+              child:
+                  Row(
+                mainAxisAlignment:
+                    MainAxisAlignment
+                        .spaceBetween,
+                children: [
+
+                  const Text(
+                    'المبلغ المستحق',
+                    style:
+                        TextStyle(
+                      color:
+                          Colors.grey,
+                    ),
+                  ),
+
+                  Text(
+                    _money(
+                      balance,
+                    ),
+                    style:
+                        const TextStyle(
+                      fontWeight:
+                          FontWeight.bold,
+                      color:
+                          orange,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            const SizedBox(
+              height: 10,
+            ),
+
+            SizedBox(
+              width:
+                  double.infinity,
+              child:
+                  OutlinedButton.icon(
+                onPressed: () {
+                  _showRestaurantDetails(
+                    restaurant,
+                  );
+                },
+                icon:
+                    const Icon(
+                  Icons.visibility,
+                ),
+                label:
+                    const Text(
+                  'عرض التفاصيل',
+                ),
               ),
             ),
           ],
@@ -762,31 +1140,818 @@ class _RestaurantScreenState
   }
 
   // =========================================================
-  // MONEY CARD
+  // DRIVERS
   // =========================================================
 
-  Widget _moneyCard() {
-    final balance =
-        restaurant?[
-            'balance_due'];
+  Widget _driversPage() {
+    return ListView(
+      physics:
+          const AlwaysScrollableScrollPhysics(),
+      padding:
+          const EdgeInsets.all(
+        16,
+      ),
+      children: [
 
-    final balanceNumber =
-        double.tryParse(
-              balance
-                      ?.toString() ??
-                  '',
-            ) ??
-            0;
+        Row(
+          mainAxisAlignment:
+              MainAxisAlignment
+                  .spaceBetween,
+          children: [
+
+            const Text(
+              'السائقون',
+              style:
+                  TextStyle(
+                fontSize: 24,
+                fontWeight:
+                    FontWeight.bold,
+              ),
+            ),
+
+            Text(
+              '${drivers.length}',
+              style:
+                  const TextStyle(
+                color:
+                    orange,
+                fontWeight:
+                    FontWeight.bold,
+              ),
+            ),
+          ],
+        ),
+
+        const SizedBox(
+          height: 15,
+        ),
+
+        if (drivers.isEmpty)
+          _emptyCard(
+            icon:
+                Icons.two_wheeler,
+            text:
+                'لا توجد بيانات للسائقين',
+          )
+        else
+          ...drivers.map(
+            (driver) =>
+                Padding(
+              padding:
+                  const EdgeInsets
+                      .only(
+                bottom: 12,
+              ),
+              child:
+                  _driverCard(
+                driver,
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _driverCard(
+    Map<String, dynamic> driver,
+  ) {
+    final name =
+        driver['full_name']
+                ?.toString() ??
+            'سائق';
+
+    final phone =
+        driver['phone']
+                ?.toString() ??
+            '';
+
+    final vehicle =
+        driver['vehicle_type']
+                ?.toString() ??
+            '';
+
+    final online =
+        driver[
+                'is_online'] ==
+            true ||
+        driver[
+                'is_online']
+            .toString() ==
+            '1';
+
+    final available =
+        driver[
+                'is_available'] ==
+            true ||
+        driver[
+                'is_available']
+            .toString() ==
+            '1';
+
+    final completed =
+        _integer(
+      driver[
+          'total_completed_orders'],
+    );
+
+    final currentOrders =
+        _integer(
+      driver[
+          'current_orders_count'],
+    );
 
     return Card(
-      child: Padding(
+      child:
+          Padding(
         padding:
-            const EdgeInsets.all(
+            const EdgeInsets
+                .all(
+          16,
+        ),
+        child:
+            Column(
+          crossAxisAlignment:
+              CrossAxisAlignment
+                  .start,
+          children: [
+
+            Row(
+              children: [
+
+                Container(
+                  padding:
+                      const EdgeInsets
+                          .all(
+                    12,
+                  ),
+                  decoration:
+                      BoxDecoration(
+                    color:
+                        orange.withOpacity(
+                      .1,
+                    ),
+                    borderRadius:
+                        BorderRadius.circular(
+                      14,
+                    ),
+                  ),
+                  child:
+                      const Icon(
+                    Icons.two_wheeler,
+                    color:
+                        orange,
+                  ),
+                ),
+
+                const SizedBox(
+                  width: 12,
+                ),
+
+                Expanded(
+                  child:
+                      Column(
+                    crossAxisAlignment:
+                        CrossAxisAlignment
+                            .start,
+                    children: [
+
+                      Text(
+                        name,
+                        style:
+                            const TextStyle(
+                          fontSize:
+                              17,
+                          fontWeight:
+                              FontWeight.bold,
+                        ),
+                      ),
+
+                      if (phone
+                          .isNotEmpty)
+                        Text(
+                          phone,
+                          style:
+                              const TextStyle(
+                            color:
+                                Colors.grey,
+                          ),
+                        ),
+
+                      if (vehicle
+                          .isNotEmpty)
+                        Text(
+                          vehicle,
+                          style:
+                              const TextStyle(
+                            color:
+                                Colors.grey,
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+
+                _onlineBadge(
+                  online,
+                ),
+              ],
+            ),
+
+            const SizedBox(
+              height: 15,
+            ),
+
+            Row(
+              children: [
+
+                Expanded(
+                  child:
+                      _smallStat(
+                    title:
+                        'الحالة',
+                    value:
+                        available
+                            ? 'متاح'
+                            : 'مشغول',
+                  ),
+                ),
+
+                const SizedBox(
+                  width: 8,
+                ),
+
+                Expanded(
+                  child:
+                      _smallStat(
+                    title:
+                        'الطلب الحالي',
+                    value:
+                        currentOrders
+                            .toString(),
+                  ),
+                ),
+
+                const SizedBox(
+                  width: 8,
+                ),
+
+                Expanded(
+                  child:
+                      _smallStat(
+                    title:
+                        'مكتمل',
+                    value:
+                        completed
+                            .toString(),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // =========================================================
+  // ORDERS
+  // =========================================================
+
+  Widget _ordersPage() {
+    return ListView(
+      physics:
+          const AlwaysScrollableScrollPhysics(),
+      padding:
+          const EdgeInsets.all(
+        16,
+      ),
+      children: [
+
+        Row(
+          mainAxisAlignment:
+              MainAxisAlignment
+                  .spaceBetween,
+          children: [
+
+            const Text(
+              'جميع الطلبات',
+              style:
+                  TextStyle(
+                fontSize: 24,
+                fontWeight:
+                    FontWeight.bold,
+              ),
+            ),
+
+            Text(
+              '${allOrders.length}',
+              style:
+                  const TextStyle(
+                color:
+                    orange,
+                fontWeight:
+                    FontWeight.bold,
+              ),
+            ),
+          ],
+        ),
+
+        const SizedBox(
+          height: 15,
+        ),
+
+        if (allOrders.isEmpty)
+          _emptyCard(
+            icon:
+                Icons.receipt_long,
+            text:
+                'لا توجد طلبات',
+          )
+        else
+          ...allOrders.map(
+            (order) =>
+                Padding(
+              padding:
+                  const EdgeInsets
+                      .only(
+                bottom: 10,
+              ),
+              child:
+                  _orderHistoryCard(
+                order,
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _orderHistoryCard(
+    Map<String, dynamic> order,
+  ) {
+    final id =
+        order['id']
+                ?.toString() ??
+            '';
+
+    final restaurant =
+        order[
+                    'restaurant_name']
+                ?.toString() ??
+            'مطعم';
+
+    final driver =
+        order['driver_name']
+                ?.toString() ??
+            'لم يتم تعيين سائق';
+
+    final customer =
+        order['customer_name']
+                ?.toString() ??
+            'زبون';
+
+    final address =
+        order[
+                    'customer_address']
+                ?.toString() ??
+            '';
+
+    final status =
+        order['status']
+                ?.toString() ??
+            '';
+
+    final food =
+        order[
+            'food_amount'];
+
+    return Card(
+      child:
+          ListTile(
+        contentPadding:
+            const EdgeInsets
+                .all(
+          14,
+        ),
+
+        leading:
+            Container(
+          padding:
+              const EdgeInsets
+                  .all(
+            10,
+          ),
+          decoration:
+              BoxDecoration(
+            color:
+                orange.withOpacity(
+              .1,
+            ),
+            borderRadius:
+                BorderRadius.circular(
+              12,
+            ),
+          ),
+          child:
+              const Icon(
+            Icons.receipt_long,
+            color:
+                orange,
+          ),
+        ),
+
+        title:
+            Text(
+          '#$id - $customer',
+          style:
+              const TextStyle(
+            fontWeight:
+                FontWeight.bold,
+          ),
+        ),
+
+        subtitle:
+            Padding(
+          padding:
+              const EdgeInsets
+                  .only(
+            top: 7,
+          ),
+          child:
+              Column(
+            crossAxisAlignment:
+                CrossAxisAlignment
+                    .start,
+            children: [
+
+              Text(
+                restaurant,
+              ),
+
+              const SizedBox(
+                height: 3,
+              ),
+
+              Text(
+                'السائق: $driver',
+              ),
+
+              if (address
+                  .isNotEmpty) ...[
+                const SizedBox(
+                  height: 3,
+                ),
+                Text(
+                  address,
+                  maxLines:
+                      2,
+                  overflow:
+                      TextOverflow
+                          .ellipsis,
+                ),
+              ],
+
+              const SizedBox(
+                height: 5,
+              ),
+
+              Text(
+                'قيمة الطلب: ${_money(food)}',
+              ),
+            ],
+          ),
+        ),
+
+        trailing:
+            _statusBadge(
+          status,
+        ),
+      ),
+    );
+  }
+
+  // =========================================================
+  // ACTIVE ORDER CARD
+  // =========================================================
+
+  Widget _activeOrderCard(
+    Map<String, dynamic> order,
+  ) {
+    final id =
+        order['id']
+                ?.toString() ??
+            '';
+
+    final restaurant =
+        order[
+                    'restaurant_name']
+                ?.toString() ??
+            'مطعم';
+
+    final customer =
+        order[
+                    'customer_name']
+                ?.toString() ??
+            'زبون';
+
+    final driver =
+        order[
+                    'driver_name']
+                ?.toString() ??
+            'بانتظار السائق';
+
+    final status =
+        order['status']
+                ?.toString() ??
+            '';
+
+    return Card(
+      child:
+          Padding(
+        padding:
+            const EdgeInsets
+                .all(
+          15,
+        ),
+        child:
+            Column(
+          crossAxisAlignment:
+              CrossAxisAlignment
+                  .start,
+          children: [
+
+            Row(
+              mainAxisAlignment:
+                  MainAxisAlignment
+                      .spaceBetween,
+              children: [
+
+                Text(
+                  '#$id',
+                  style:
+                      const TextStyle(
+                    fontWeight:
+                        FontWeight.bold,
+                  ),
+                ),
+
+                _statusBadge(
+                  status,
+                ),
+              ],
+            ),
+
+            const SizedBox(
+              height: 12,
+            ),
+
+            Text(
+              restaurant,
+              style:
+                  const TextStyle(
+                fontWeight:
+                    FontWeight.bold,
+              ),
+            ),
+
+            const SizedBox(
+              height: 5,
+            ),
+
+            Text(
+              'الزبون: $customer',
+            ),
+
+            const SizedBox(
+              height: 5,
+            ),
+
+            Text(
+              'السائق: $driver',
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // =========================================================
+  // RESTAURANT DETAILS
+  // =========================================================
+
+  void _showRestaurantDetails(
+    Map<String, dynamic> restaurant,
+  ) {
+    showModalBottomSheet(
+      context: context,
+      showDragHandle:
+          true,
+      builder: (_) {
+        return Padding(
+          padding:
+              const EdgeInsets
+                  .all(
+            20,
+          ),
+          child:
+              Column(
+            mainAxisSize:
+                MainAxisSize.min,
+            crossAxisAlignment:
+                CrossAxisAlignment
+                    .start,
+            children: [
+
+              Text(
+                restaurant[
+                            'name']
+                        ?.toString() ??
+                    'مطعم',
+                style:
+                    const TextStyle(
+                  fontSize:
+                      23,
+                  fontWeight:
+                      FontWeight.bold,
+                ),
+              ),
+
+              const SizedBox(
+                height: 18,
+              ),
+
+              _detailRow(
+                Icons.phone,
+                'الهاتف',
+                restaurant[
+                            'phone']
+                        ?.toString() ??
+                    '-',
+              ),
+
+              _detailRow(
+                Icons.location_on,
+                'العنوان',
+                restaurant[
+                            'address']
+                        ?.toString() ??
+                    '-',
+              ),
+
+              _detailRow(
+                Icons
+                    .account_balance_wallet,
+                'المبلغ المستحق',
+                _money(
+                  restaurant[
+                      'balance_due'],
+                ),
+              ),
+
+              _detailRow(
+                Icons.circle,
+                'الحالة',
+                _restaurantStatus(
+                  restaurant[
+                      'is_active'],
+                ),
+              ),
+
+              const SizedBox(
+                height: 15,
+              ),
+
+              SizedBox(
+                width:
+                    double.infinity,
+                child:
+                    ElevatedButton(
+                  onPressed: () {
+                    Navigator.pop(
+                      context,
+                    );
+
+                    _showMessage(
+                      'تفعيل وتعطيل المطعم سنربطه بالـ Backend في الخطوة القادمة',
+                    );
+                  },
+                  child:
+                      const Text(
+                    'إدارة حالة المطعم',
+                  ),
+                ),
+              ),
+
+              const SizedBox(
+                height: 10,
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  String _restaurantStatus(
+    dynamic value,
+  ) {
+    final active =
+        value == true ||
+            value
+                    ?.toString() ==
+                '1';
+
+    return active
+        ? 'نشط'
+        : 'غير نشط';
+  }
+
+  // =========================================================
+  // UI HELPERS
+  // =========================================================
+
+  Widget _statCard({
+    required IconData icon,
+    required String title,
+    required String value,
+  }) {
+    return Card(
+      child:
+          Padding(
+        padding:
+            const EdgeInsets
+                .all(
+          15,
+        ),
+        child:
+            Column(
+          mainAxisAlignment:
+              MainAxisAlignment
+                  .center,
+          children: [
+
+            Icon(
+              icon,
+              color:
+                  orange,
+              size:
+                  30,
+            ),
+
+            const SizedBox(
+              height: 8,
+            ),
+
+            Text(
+              value,
+              style:
+                  const TextStyle(
+                fontSize:
+                    24,
+                fontWeight:
+                    FontWeight.bold,
+              ),
+            ),
+
+            const SizedBox(
+              height: 3,
+            ),
+
+            Text(
+              title,
+              textAlign:
+                  TextAlign.center,
+              style:
+                  const TextStyle(
+                color:
+                    Colors.grey,
+                fontSize:
+                    12,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _financeCard({
+    required IconData icon,
+    required String title,
+    required String value,
+  }) {
+    return Card(
+      child:
+          Padding(
+        padding:
+            const EdgeInsets
+                .all(
           18,
         ),
         child:
             Row(
           children: [
+
             Container(
               padding:
                   const EdgeInsets
@@ -805,406 +1970,66 @@ class _RestaurantScreenState
                 ),
               ),
               child:
-                  const Icon(
-                Icons
-                    .account_balance_wallet,
-                color: orange,
-              ),
-            ),
-            const SizedBox(
-              width: 15,
-            ),
-            Column(
-              crossAxisAlignment:
-                  CrossAxisAlignment
-                      .start,
-              children: [
-                const Text(
-                  'المبلغ المستحق',
-                  style:
-                      TextStyle(
-                    color:
-                        Colors.grey,
-                  ),
-                ),
-                const SizedBox(
-                  height: 5,
-                ),
-                Text(
-                  '${balanceNumber.toStringAsFixed(3)} د.ت',
-                  style:
-                      const TextStyle(
-                    fontSize: 22,
-                    fontWeight:
-                        FontWeight.bold,
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  // =========================================================
-  // EMPTY ORDERS
-  // =========================================================
-
-  Widget _emptyOrdersCard() {
-    return Card(
-      child: Padding(
-        padding:
-            const EdgeInsets.all(
-          25,
-        ),
-        child:
-            Center(
-          child:
-              Column(
-            children: const [
-              Icon(
-                Icons
-                    .inbox_outlined,
-                size: 50,
+                  Icon(
+                icon,
                 color:
-                    Colors.grey,
+                    orange,
               ),
-              SizedBox(
-                height: 10,
-              ),
-              Text(
-                'لا توجد طلبات نشطة حاليًا',
-                style:
-                    TextStyle(
-                  color:
-                      Colors.grey,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  // =========================================================
-  // ORDER CARD
-  // =========================================================
-
-  Widget _orderCard(
-    Map<String, dynamic> order,
-  ) {
-    final id =
-        int.tryParse(
-              order['id']
-                      ?.toString() ??
-                  '',
-            ) ??
-            0;
-
-    final customer =
-        order['customer_name']
-                    ?.toString()
-                    .trim()
-                    .isNotEmpty ==
-                true
-            ? order[
-                    'customer_name']
-                .toString()
-            : 'زبون';
-
-    final phone =
-        order['customer_phone']
-                ?.toString() ??
-            '';
-
-    final address =
-        order['customer_address']
-                ?.toString() ??
-            '';
-
-    final status =
-        order['status']
-                ?.toString() ??
-            '';
-
-    final foodAmount =
-        _toDouble(
-      order['food_amount'],
-    );
-
-    final driverFee =
-        _toDouble(
-      order['driver_fee'],
-    );
-
-    final customerLat =
-        _toDoubleNullable(
-      order[
-          'customer_latitude'],
-    );
-
-    final customerLng =
-        _toDoubleNullable(
-      order[
-          'customer_longitude'],
-    );
-
-    return Card(
-      child: Padding(
-        padding:
-            const EdgeInsets.all(
-          16,
-        ),
-        child:
-            Column(
-          crossAxisAlignment:
-              CrossAxisAlignment
-                  .start,
-          children: [
-
-            Row(
-              mainAxisAlignment:
-                  MainAxisAlignment
-                      .spaceBetween,
-              children: [
-                Text(
-                  '#$id',
-                  style:
-                      const TextStyle(
-                    fontWeight:
-                        FontWeight.bold,
-                  ),
-                ),
-                _statusBadge(
-                  status,
-                ),
-              ],
             ),
 
             const SizedBox(
-              height: 15,
+              width: 14,
             ),
 
-            Row(
-              children: [
-                const Icon(
-                  Icons.person,
-                  color: orange,
-                ),
-                const SizedBox(
-                  width: 8,
-                ),
-                Expanded(
-                  child:
-                      Text(customer),
-                ),
-              ],
-            ),
-
-            if (phone.isNotEmpty) ...[
-              const SizedBox(
-                height: 10,
-              ),
-              Row(
+            Expanded(
+              child:
+                  Column(
+                crossAxisAlignment:
+                    CrossAxisAlignment
+                        .start,
                 children: [
-                  const Icon(
-                    Icons.phone,
-                    color: orange,
+
+                  Text(
+                    title,
+                    style:
+                        const TextStyle(
+                      color:
+                          Colors.grey,
+                    ),
                   ),
+
                   const SizedBox(
-                    width: 8,
+                    height: 4,
                   ),
-                  Text(phone),
+
+                  Text(
+                    value,
+                    style:
+                        const TextStyle(
+                      fontSize:
+                          21,
+                      fontWeight:
+                          FontWeight.bold,
+                    ),
+                  ),
                 ],
               ),
-            ],
-
-            const SizedBox(
-              height: 10,
             ),
-
-            Row(
-              crossAxisAlignment:
-                  CrossAxisAlignment
-                      .start,
-              children: [
-                const Icon(
-                  Icons.location_on,
-                  color: orange,
-                ),
-                const SizedBox(
-                  width: 8,
-                ),
-                Expanded(
-                  child:
-                      Text(address),
-                ),
-              ],
-            ),
-
-            const SizedBox(
-              height: 15,
-            ),
-
-            Row(
-              children: [
-                Expanded(
-                  child:
-                      _infoBox(
-                    title:
-                        'قيمة الطلب',
-                    value:
-                        '${foodAmount.toStringAsFixed(3)} د.ت',
-                    icon: Icons
-                        .restaurant,
-                  ),
-                ),
-                const SizedBox(
-                  width: 8,
-                ),
-                Expanded(
-                  child:
-                      _infoBox(
-                    title:
-                        'أجرة السائق',
-                    value:
-                        '${driverFee.toStringAsFixed(3)} د.ت',
-                    icon: Icons
-                        .two_wheeler,
-                  ),
-                ),
-              ],
-            ),
-
-            const SizedBox(
-              height: 12,
-            ),
-
-            if (status ==
-                'driver_arrived')
-              SizedBox(
-                width:
-                    double.infinity,
-                child:
-                    ElevatedButton
-                        .icon(
-                  onPressed:
-                      verifyingOtp
-                          ? null
-                          : () {
-                              _showOtpDialog(
-                                orderId:
-                                    id,
-                              );
-                            },
-                  icon:
-                      const Icon(
-                    Icons.verified,
-                  ),
-                  label:
-                      const Text(
-                    'تأكيد استلام الطلب بـ OTP',
-                  ),
-                ),
-              ),
-
-            if (status ==
-                    'accepted' ||
-                status ==
-                    'driver_arrived' ||
-                status ==
-                    'picked_up' ||
-                status ==
-                    'delivering') ...[
-              const SizedBox(
-                height: 10,
-              ),
-              SizedBox(
-                width:
-                    double.infinity,
-                child:
-                    OutlinedButton
-                        .icon(
-                  onPressed: () {
-                    _openMaps(
-                      latitude:
-                          customerLat,
-                      longitude:
-                          customerLng,
-                    );
-                  },
-                  icon:
-                      const Icon(
-                    Icons.map,
-                  ),
-                  label:
-                      const Text(
-                    'فتح موقع الزبون',
-                  ),
-                ),
-              ),
-            ],
-
-            if (status ==
-                'accepted') ...[
-              const SizedBox(
-                height: 8,
-              ),
-              _infoMessage(
-                'السائق قبل الطلب وسيصل إلى المطعم لاستلامه.',
-              ),
-            ],
-
-            if (status ==
-                'driver_arrived') ...[
-              const SizedBox(
-                height: 8,
-              ),
-              _infoMessage(
-                'السائق وصل للمطعم. أدخل رمز OTP الظاهر لدى السائق لتأكيد الاستلام.',
-              ),
-            ],
-
-            if (status ==
-                'picked_up') ...[
-              const SizedBox(
-                height: 8,
-              ),
-              _infoMessage(
-                'تم استلام الطلب من المطعم.',
-              ),
-            ],
-
-            if (status ==
-                'delivering') ...[
-              const SizedBox(
-                height: 8,
-              ),
-              _infoMessage(
-                'السائق في طريقه إلى الزبون.',
-              ),
-            ],
           ],
         ),
       ),
     );
   }
 
-  // =========================================================
-  // INFO BOX
-  // =========================================================
-
-  Widget _infoBox({
+  Widget _smallStat({
     required String title,
     required String value,
-    required IconData icon,
   }) {
     return Container(
       padding:
-          const EdgeInsets.all(
-        12,
+          const EdgeInsets
+              .all(
+        10,
       ),
       decoration:
           BoxDecoration(
@@ -1212,48 +2037,34 @@ class _RestaurantScreenState
             Colors.grey.shade100,
         borderRadius:
             BorderRadius.circular(
-          12,
+          10,
         ),
       ),
       child:
-          Row(
+          Column(
         children: [
-          Icon(
-            icon,
-            color: orange,
-            size: 22,
+
+          Text(
+            value,
+            style:
+                const TextStyle(
+              fontWeight:
+                  FontWeight.bold,
+            ),
           ),
+
           const SizedBox(
-            width: 8,
+            height: 3,
           ),
-          Expanded(
-            child:
-                Column(
-              crossAxisAlignment:
-                  CrossAxisAlignment
-                      .start,
-              children: [
-                Text(
-                  title,
-                  style:
-                      const TextStyle(
-                    color:
-                        Colors.grey,
-                    fontSize: 11,
-                  ),
-                ),
-                const SizedBox(
-                  height: 3,
-                ),
-                Text(
-                  value,
-                  style:
-                      const TextStyle(
-                    fontWeight:
-                        FontWeight.bold,
-                  ),
-                ),
-              ],
+
+          Text(
+            title,
+            style:
+                const TextStyle(
+              color:
+                  Colors.grey,
+              fontSize:
+                  11,
             ),
           ),
         ],
@@ -1261,45 +2072,99 @@ class _RestaurantScreenState
     );
   }
 
-  // =========================================================
-  // INFO MESSAGE
-  // =========================================================
-
-  Widget _infoMessage(
-    String text,
+  Widget _activeBadge(
+    bool active,
   ) {
     return Container(
-      width:
-          double.infinity,
       padding:
-          const EdgeInsets.all(
-        12,
+          const EdgeInsets
+              .symmetric(
+        horizontal: 9,
+        vertical: 5,
       ),
       decoration:
           BoxDecoration(
         color:
-            orange.withOpacity(
-          .08,
-        ),
+            active
+                ? Colors.green
+                    .withOpacity(
+                    .1,
+                  )
+                : Colors.red
+                    .withOpacity(
+                    .1,
+                  ),
         borderRadius:
             BorderRadius.circular(
-          12,
+          20,
         ),
       ),
       child:
           Text(
-        text,
+        active
+            ? 'نشط'
+            : 'غير نشط',
         style:
-            const TextStyle(
-          fontSize: 13,
+            TextStyle(
+          color:
+              active
+                  ? Colors.green
+                  : Colors.red,
+          fontSize:
+              11,
+          fontWeight:
+              FontWeight.bold,
         ),
       ),
     );
   }
 
-  // =========================================================
-  // STATUS BADGE
-  // =========================================================
+  Widget _onlineBadge(
+    bool online,
+  ) {
+    return Container(
+      padding:
+          const EdgeInsets
+              .symmetric(
+        horizontal: 9,
+        vertical: 5,
+      ),
+      decoration:
+          BoxDecoration(
+        color:
+            online
+                ? Colors.green
+                    .withOpacity(
+                    .1,
+                  )
+                : Colors.grey
+                    .withOpacity(
+                    .15,
+                  ),
+        borderRadius:
+            BorderRadius.circular(
+          20,
+        ),
+      ),
+      child:
+          Text(
+        online
+            ? 'متصل'
+            : 'غير متصل',
+        style:
+            TextStyle(
+          color:
+              online
+                  ? Colors.green
+                  : Colors.grey,
+          fontSize:
+              11,
+          fontWeight:
+              FontWeight.bold,
+        ),
+      ),
+    );
+  }
 
   Widget _statusBadge(
     String status,
@@ -1320,7 +2185,7 @@ class _RestaurantScreenState
         break;
 
       case 'accepted':
-        text = 'تم قبول الطلب';
+        text = 'مقبول';
         break;
 
       case 'driver_arrived':
@@ -1328,11 +2193,11 @@ class _RestaurantScreenState
         break;
 
       case 'pickup_verified':
-        text = 'تم تأكيد الاستلام';
+        text = 'تم التأكيد';
         break;
 
       case 'picked_up':
-        text = 'تم استلام الطلب';
+        text = 'تم الاستلام';
         break;
 
       case 'delivering':
@@ -1348,7 +2213,7 @@ class _RestaurantScreenState
         break;
 
       case 'failed':
-        text = 'فشل الطلب';
+        text = 'فشل';
         break;
 
       default:
@@ -1361,7 +2226,7 @@ class _RestaurantScreenState
       padding:
           const EdgeInsets
               .symmetric(
-        horizontal: 10,
+        horizontal: 9,
         vertical: 5,
       ),
       decoration:
@@ -1380,8 +2245,10 @@ class _RestaurantScreenState
         text,
         style:
             const TextStyle(
-          color: orange,
-          fontSize: 12,
+          color:
+              orange,
+          fontSize:
+              11,
           fontWeight:
               FontWeight.bold,
         ),
@@ -1389,649 +2256,95 @@ class _RestaurantScreenState
     );
   }
 
-  // =========================================================
-  // QUICK ACTION
-  // =========================================================
-
-  Widget _quickAction({
-    required IconData icon,
-    required String title,
-    required VoidCallback onTap,
-  }) {
-    return Card(
+  Widget _detailRow(
+    IconData icon,
+    String title,
+    String value,
+  ) {
+    return Padding(
+      padding:
+          const EdgeInsets
+              .only(
+        bottom: 13,
+      ),
       child:
-          InkWell(
-        onTap: onTap,
-        borderRadius:
-            BorderRadius.circular(
-          18,
-        ),
-        child:
-            Padding(
-          padding:
-              const EdgeInsets.all(
-            18,
+          Row(
+        crossAxisAlignment:
+            CrossAxisAlignment
+                .start,
+        children: [
+
+          Icon(
+            icon,
+            color:
+                orange,
+            size:
+                20,
           ),
-          child:
-              Column(
-            children: [
-              Icon(
-                icon,
-                color: orange,
-                size: 30,
-              ),
-              const SizedBox(
-                height: 8,
-              ),
-              Text(
-                title,
-                textAlign:
-                    TextAlign.center,
-                style:
-                    const TextStyle(
-                  fontWeight:
-                      FontWeight.bold,
-                ),
-              ),
-            ],
+
+          const SizedBox(
+            width: 10,
           ),
-        ),
+
+          Text(
+            '$title: ',
+            style:
+                const TextStyle(
+              fontWeight:
+                  FontWeight.bold,
+            ),
+          ),
+
+          Expanded(
+            child:
+                Text(
+              value,
+            ),
+          ),
+        ],
       ),
     );
   }
 
-  // =========================================================
-  // OTP DIALOG
-  // =========================================================
-
-  void _showOtpDialog({
-    required int orderId,
+  Widget _emptyCard({
+    required IconData icon,
+    required String text,
   }) {
-    final otpController =
-        TextEditingController();
+    return Card(
+      child:
+          Padding(
+        padding:
+            const EdgeInsets
+                .all(
+          30,
+        ),
+        child:
+            Column(
+          children: [
 
-    showDialog(
-      context: context,
-      barrierDismissible:
-          false,
-      builder:
-          (dialogContext) {
-        return AlertDialog(
-          title:
-              const Text(
-            'تأكيد استلام الطلب',
-          ),
-          content:
-              Column(
-            mainAxisSize:
-                MainAxisSize.min,
-            children: [
-
-              const Icon(
-                Icons
-                    .verified_user,
-                color: orange,
-                size: 55,
-              ),
-
-              const SizedBox(
-                height: 12,
-              ),
-
-              const Text(
-                'اطلب من السائق رمز OTP المكون من 4 أرقام.',
-                textAlign:
-                    TextAlign.center,
-              ),
-
-              const SizedBox(
-                height: 18,
-              ),
-
-              TextField(
-                controller:
-                    otpController,
-                autofocus:
-                    true,
-                maxLength:
-                    4,
-                textAlign:
-                    TextAlign.center,
-                keyboardType:
-                    TextInputType
-                        .number,
-                decoration:
-                    const InputDecoration(
-                  labelText:
-                      'رمز OTP',
-                  hintText:
-                      '0000',
-                  prefixIcon:
-                      Icon(
-                    Icons.lock,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          actions: [
-
-            TextButton(
-              onPressed:
-                  verifyingOtp
-                      ? null
-                      : () {
-                          Navigator.of(
-                            dialogContext,
-                          ).pop();
-                        },
-              child:
-                  const Text(
-                'إلغاء',
-              ),
+            Icon(
+              icon,
+              size:
+                  50,
+              color:
+                  Colors.grey,
             ),
 
-            ElevatedButton(
-              onPressed:
-                  verifyingOtp
-                      ? null
-                      : () async {
-                          final success =
-                              await verifyPickupOtp(
-                            orderId:
-                                orderId,
-                            otp:
-                                otpController
-                                    .text,
-                          );
+            const SizedBox(
+              height: 10,
+            ),
 
-                          if (success &&
-                              dialogContext
-                                  .mounted) {
-                            Navigator.of(
-                              dialogContext,
-                            ).pop();
-                          }
-                        },
-              child:
-                  verifyingOtp
-                      ? const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child:
-                              CircularProgressIndicator(
-                            color:
-                                Colors.white,
-                            strokeWidth:
-                                2,
-                          ),
-                        )
-                      : const Text(
-                          'تأكيد',
-                        ),
+            Text(
+              text,
+              style:
+                  const TextStyle(
+                color:
+                    Colors.grey,
+              ),
             ),
           ],
-        );
-      },
-    );
-  }
-
-  // =========================================================
-  // HISTORY
-  // =========================================================
-
-  void _showHistoryDialog() {
-    final history =
-        orders.where(
-      (order) {
-        final status =
-            order['status']
-                ?.toString();
-
-        return [
-          'delivered',
-          'cancelled',
-          'failed',
-        ].contains(status);
-      },
-    ).toList();
-
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled:
-          true,
-      showDragHandle:
-          true,
-      builder: (_) {
-        return SizedBox(
-          height:
-              MediaQuery.of(
-                    context,
-                  ).size.height *
-                  .75,
-          child:
-              Padding(
-            padding:
-                const EdgeInsets
-                    .all(
-              16,
-            ),
-            child:
-                Column(
-              crossAxisAlignment:
-                  CrossAxisAlignment
-                      .start,
-              children: [
-
-                const Text(
-                  'سجل الطلبات',
-                  style:
-                      TextStyle(
-                    fontSize: 22,
-                    fontWeight:
-                        FontWeight.bold,
-                  ),
-                ),
-
-                const SizedBox(
-                  height: 15,
-                ),
-
-                Expanded(
-                  child:
-                      history.isEmpty
-                          ? const Center(
-                              child:
-                                  Text(
-                                'لا توجد طلبات سابقة',
-                              ),
-                            )
-                          : ListView
-                              .separated(
-                              itemCount:
-                                  history.length,
-                              separatorBuilder:
-                                  (_, __) =>
-                                      const SizedBox(
-                                height:
-                                    8,
-                              ),
-                              itemBuilder:
-                                  (
-                                _,
-                                index,
-                              ) {
-                                final order =
-                                    history[
-                                        index];
-
-                                return ListTile(
-                                  shape:
-                                      RoundedRectangleBorder(
-                                    borderRadius:
-                                        BorderRadius.circular(
-                                      12,
-                                    ),
-                                  ),
-                                  tileColor:
-                                      Colors
-                                          .grey
-                                          .shade100,
-                                  title:
-                                      Text(
-                                    '#${order['id']} - ${order['customer_name'] ?? 'زبون'}',
-                                  ),
-                                  subtitle:
-                                      Text(
-                                    order['customer_address']
-                                            ?.toString() ??
-                                        '',
-                                  ),
-                                  trailing:
-                                      _statusBadge(
-                                    order['status']
-                                            ?.toString() ??
-                                        '',
-                                  ),
-                                );
-                              },
-                            ),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  // =========================================================
-  // NEW ORDER DIALOG
-  // =========================================================
-
-  void _showNewOrderDialog(
-    BuildContext context,
-  ) {
-    final customerName =
-        TextEditingController();
-
-    final customerPhone =
-        TextEditingController();
-
-    final customerAddress =
-        TextEditingController();
-
-    final latitude =
-        TextEditingController();
-
-    final longitude =
-        TextEditingController();
-
-    final foodAmount =
-        TextEditingController();
-
-    final driverFee =
-        TextEditingController();
-
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled:
-          true,
-      showDragHandle:
-          true,
-      builder: (_) {
-        return StatefulBuilder(
-          builder:
-              (
-            modalContext,
-            setModalState,
-          ) {
-            return Padding(
-              padding:
-                  EdgeInsets.only(
-                left: 20,
-                right: 20,
-                bottom:
-                    MediaQuery.of(
-                          modalContext,
-                        )
-                            .viewInsets
-                            .bottom +
-                        20,
-              ),
-              child:
-                  SingleChildScrollView(
-                child:
-                    Column(
-                  mainAxisSize:
-                      MainAxisSize.min,
-                  children: [
-
-                    const Text(
-                      'طلب توصيل جديد',
-                      style:
-                          TextStyle(
-                        fontSize: 22,
-                        fontWeight:
-                            FontWeight.bold,
-                      ),
-                    ),
-
-                    const SizedBox(
-                      height: 20,
-                    ),
-
-                    TextField(
-                      controller:
-                          customerName,
-                      decoration:
-                          const InputDecoration(
-                        labelText:
-                            'اسم الزبون',
-                        prefixIcon:
-                            Icon(
-                          Icons.person,
-                        ),
-                      ),
-                    ),
-
-                    const SizedBox(
-                      height: 12,
-                    ),
-
-                    TextField(
-                      controller:
-                          customerPhone,
-                      keyboardType:
-                          TextInputType
-                              .phone,
-                      decoration:
-                          const InputDecoration(
-                        labelText:
-                            'رقم الزبون',
-                        prefixIcon:
-                            Icon(
-                          Icons.phone,
-                        ),
-                      ),
-                    ),
-
-                    const SizedBox(
-                      height: 12,
-                    ),
-
-                    TextField(
-                      controller:
-                          foodAmount,
-                      keyboardType:
-                          const TextInputType
-                              .numberWithOptions(
-                        decimal:
-                            true,
-                      ),
-                      decoration:
-                          const InputDecoration(
-                        labelText:
-                            'قيمة الطلب',
-                        prefixIcon:
-                            Icon(
-                          Icons
-                              .account_balance_wallet,
-                        ),
-                      ),
-                    ),
-
-                    const SizedBox(
-                      height: 12,
-                    ),
-
-                    TextField(
-                      controller:
-                          driverFee,
-                      keyboardType:
-                          const TextInputType
-                              .numberWithOptions(
-                        decimal:
-                            true,
-                      ),
-                      decoration:
-                          const InputDecoration(
-                        labelText:
-                            'أجرة السائق',
-                        prefixIcon:
-                            Icon(
-                          Icons
-                              .two_wheeler,
-                        ),
-                      ),
-                    ),
-
-                    const SizedBox(
-                      height: 12,
-                    ),
-
-                    TextField(
-                      controller:
-                          customerAddress,
-                      maxLines:
-                          2,
-                      decoration:
-                          const InputDecoration(
-                        labelText:
-                            'عنوان الزبون',
-                        prefixIcon:
-                            Icon(
-                          Icons
-                              .location_on,
-                        ),
-                      ),
-                    ),
-
-                    const SizedBox(
-                      height: 12,
-                    ),
-
-                    Row(
-                      children: [
-
-                        Expanded(
-                          child:
-                              TextField(
-                            controller:
-                                latitude,
-                            keyboardType:
-                                const TextInputType
-                                    .numberWithOptions(
-                              decimal:
-                                  true,
-                              signed:
-                                  true,
-                            ),
-                            decoration:
-                                const InputDecoration(
-                              labelText:
-                                  'Latitude',
-                            ),
-                          ),
-                        ),
-
-                        const SizedBox(
-                          width: 10,
-                        ),
-
-                        Expanded(
-                          child:
-                              TextField(
-                            controller:
-                                longitude,
-                            keyboardType:
-                                const TextInputType
-                                    .numberWithOptions(
-                              decimal:
-                                  true,
-                              signed:
-                                  true,
-                            ),
-                            decoration:
-                                const InputDecoration(
-                              labelText:
-                                  'Longitude',
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-
-                    const SizedBox(
-                      height: 20,
-                    ),
-
-                    SizedBox(
-                      width:
-                          double.infinity,
-                      child:
-                          ElevatedButton(
-                        onPressed:
-                            creatingOrder
-                                ? null
-                                : () async {
-                                    await createOrder(
-                                      customerName:
-                                          customerName
-                                              .text,
-                                      customerPhone:
-                                          customerPhone
-                                              .text,
-                                      customerAddress:
-                                          customerAddress
-                                              .text,
-                                      latitude:
-                                          latitude
-                                              .text,
-                                      longitude:
-                                          longitude
-                                              .text,
-                                      foodAmount:
-                                          foodAmount
-                                              .text,
-                                      driverFee:
-                                          driverFee
-                                              .text,
-                                    );
-                                  },
-                        child:
-                            creatingOrder
-                                ? const SizedBox(
-                                    width:
-                                        24,
-                                    height:
-                                        24,
-                                    child:
-                                        CircularProgressIndicator(
-                                      color:
-                                          Colors.white,
-                                      strokeWidth:
-                                          2.5,
-                                    ),
-                                  )
-                                : const Text(
-                                    'نشر طلب التوصيل',
-                                  ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            );
-          },
-        );
-      },
-    );
-  }
-
-  // =========================================================
-  // NUMBER HELPERS
-  // =========================================================
-
-  double _toDouble(
-    dynamic value,
-  ) {
-    return double.tryParse(
-          value?.toString() ??
-              '',
-        ) ??
-        0;
-  }
-
-  double? _toDoubleNullable(
-    dynamic value,
-  ) {
-    if (value == null) {
-      return null;
-    }
-
-    return double.tryParse(
-      value.toString(),
+        ),
+      ),
     );
   }
 }

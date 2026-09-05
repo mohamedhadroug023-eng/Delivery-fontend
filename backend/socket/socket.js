@@ -1,127 +1,315 @@
-import 'package:socket_io_client/socket_io_client.dart'
-    as io;
+const jwt = require("jsonwebtoken");
 
-class SocketService {
-  io.Socket? _socket;
+const pool = require("../config/database");
 
-  bool get isConnected =>
-      _socket?.connected ?? false;
+const {
+  initializeNotificationService
+} = require("../services/notification.service");
+
+
+/* =========================================================
+   INITIALIZE SOCKET
+========================================================= */
+
+function initializeSocket(io) {
+
+  initializeNotificationService(io);
+
 
   /* =======================================================
-     CONNECT
+     SOCKET AUTHENTICATION
   ======================================================= */
 
-  void connect({
-    required String serverUrl,
-    required String token,
-    String? role,
-  }) {
-    disconnect();
+  io.use(async (socket, next) => {
 
-    _socket = io.io(
-      serverUrl,
-      io.OptionBuilder()
-          .setTransports(['websocket'])
-          .setAuth({
-            'token': token,
-          })
-          .disableAutoConnect()
-          .enableReconnection()
-          .setReconnectionAttempts(10)
-          .setReconnectionDelay(1000)
-          .build(),
-    );
+    try {
 
-    _socket!.onConnect((_) {
-      print(
-        'Socket connected: ${_socket!.id}',
-      );
+      const token =
+        socket.handshake.auth?.token;
 
-      /*
-       * Backend already identifies the user
-       * from the JWT token.
-       *
-       * No driverId / restaurantId is trusted
-       * from the client.
-       */
 
-      if (role == 'driver') {
-        _socket!.emit('driver_join');
+      if (!token) {
+        return next(
+          new Error(
+            "Authentication required"
+          )
+        );
       }
-    });
 
-    _socket!.onDisconnect((_) {
-      print(
-        'Socket disconnected',
+
+      const decoded =
+        jwt.verify(
+          token,
+          process.env.JWT_SECRET
+        );
+
+
+      /* =====================================================
+         DRIVER
+      ===================================================== */
+
+      if (
+        decoded.role === "driver"
+      ) {
+
+        const [drivers] =
+          await pool.execute(
+            `
+            SELECT
+              id,
+              user_id
+            FROM drivers
+            WHERE user_id = ?
+            LIMIT 1
+            `,
+            [decoded.id]
+          );
+
+
+        if (drivers.length === 0) {
+          return next(
+            new Error(
+              "Driver profile not found"
+            )
+          );
+        }
+
+
+        socket.user = decoded;
+
+
+        socket.driver = {
+          id: drivers[0].id,
+          user_id:
+            drivers[0].user_id
+        };
+
+
+        return next();
+      }
+
+
+      /* =====================================================
+         RESTAURANT
+      ===================================================== */
+
+      if (
+        decoded.role ===
+        "restaurant"
+      ) {
+
+        const [restaurants] =
+          await pool.execute(
+            `
+            SELECT
+              id,
+              user_id
+            FROM restaurants
+            WHERE user_id = ?
+            LIMIT 1
+            `,
+            [decoded.id]
+          );
+
+
+        if (
+          restaurants.length === 0
+        ) {
+          return next(
+            new Error(
+              "Restaurant profile not found"
+            )
+          );
+        }
+
+
+        socket.user = decoded;
+
+
+        socket.restaurant = {
+          id:
+            restaurants[0].id,
+
+          user_id:
+            restaurants[0].user_id
+        };
+
+
+        return next();
+      }
+
+
+      /* =====================================================
+         ADMIN
+      ===================================================== */
+
+      if (
+        decoded.role === "admin"
+      ) {
+
+        socket.user = decoded;
+
+        return next();
+      }
+
+
+      return next(
+        new Error(
+          "Invalid user role"
+        )
       );
-    });
 
-    _socket!.onConnectError((error) {
-      print(
-        'Socket connection error: $error',
+    } catch (error) {
+
+      console.error(
+        "Socket authentication error:",
+        error
       );
-    });
 
-    _socket!.onError((error) {
-      print(
-        'Socket error: $error',
+
+      return next(
+        new Error(
+          "Invalid or expired token"
+        )
       );
-    });
-
-    _socket!.connect();
-  }
+    }
+  });
 
 
-  /* =======================================================
-     LISTEN
-  ======================================================= */
+  /* =========================================================
+     CONNECTION
+  ========================================================= */
 
-  void on(
-    String event,
-    Function(dynamic data) callback,
-  ) {
-    _socket?.off(event);
+  io.on(
+    "connection",
+    (socket) => {
 
-    _socket?.on(
-      event,
-      callback,
-    );
-  }
+      console.log(
+        `Socket connected: ${socket.id} - ` +
+        `User ${socket.user.id} - ` +
+        `Role ${socket.user.role}`
+      );
 
 
-  /* =======================================================
-     REMOVE LISTENER
-  ======================================================= */
+      /* =====================================================
+         DRIVER ROOM
+      ===================================================== */
 
-  void off(
-    String event,
-  ) {
-    _socket?.off(event);
-  }
+      if (
+        socket.user.role ===
+        "driver"
+      ) {
 
-
-  /* =======================================================
-     EMIT
-  ======================================================= */
-
-  void emit(
-    String event,
-    dynamic data,
-  ) {
-    _socket?.emit(
-      event,
-      data,
-    );
-  }
+        const driverId =
+          socket.driver.id;
 
 
-  /* =======================================================
-     DISCONNECT
-  ======================================================= */
+        socket.join(
+          `driver_${driverId}`
+        );
 
-  void disconnect() {
-    _socket?.disconnect();
-    _socket?.dispose();
-    _socket = null;
-  }
+
+        console.log(
+          `Driver ${driverId} joined room`
+        );
+
+
+        /*
+         * Optional explicit join.
+         *
+         * The driver is already placed
+         * in the room automatically above.
+         *
+         * No driver ID is accepted from
+         * the Flutter client.
+         */
+
+        socket.on(
+          "driver_join",
+          () => {
+
+            socket.join(
+              `driver_${driverId}`
+            );
+
+
+            console.log(
+              `Driver ${driverId} confirmed socket room`
+            );
+          }
+        );
+      }
+
+
+      /* =====================================================
+         RESTAURANT ROOM
+      ===================================================== */
+
+      if (
+        socket.user.role ===
+        "restaurant"
+      ) {
+
+        const restaurantId =
+          socket.restaurant.id;
+
+
+        socket.join(
+          `restaurant_${restaurantId}`
+        );
+
+
+        console.log(
+          `Restaurant ${restaurantId} joined room`
+        );
+      }
+
+
+      /* =====================================================
+         ADMIN ROOM
+      ===================================================== */
+
+      if (
+        socket.user.role ===
+        "admin"
+      ) {
+
+        socket.join(
+          "admins"
+        );
+
+
+        console.log(
+          `Admin ${socket.user.id} joined admin room`
+        );
+      }
+
+
+      /* =====================================================
+         DISCONNECT
+      ===================================================== */
+
+      socket.on(
+        "disconnect",
+        (reason) => {
+
+          console.log(
+            `Socket disconnected: ${socket.id} - ` +
+            `User ${socket.user.id} - ` +
+            `Role ${socket.user.role} - ` +
+            `Reason: ${reason}`
+          );
+        }
+      );
+    }
+  );
 }
+
+
+/* =========================================================
+   EXPORT
+========================================================= */
+
+module.exports = {
+  initializeSocket
+};

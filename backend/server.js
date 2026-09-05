@@ -5,6 +5,8 @@ const cors = require("cors");
 const helmet = require("helmet");
 
 const authRoutes = require("./routes/auth.routes");
+const restaurantRoutes = require("./routes/restaurant.routes");
+
 const errorHandler = require("./middleware/error.middleware");
 
 const app = express();
@@ -30,11 +32,25 @@ app.get("/", (req, res) => {
 
 app.use("/api/auth", authRoutes);
 
+app.use("/api/restaurant", restaurantRoutes);
+
 // =========================================================
 // ERROR HANDLER
 // =========================================================
 
 app.use(errorHandler);
+
+// =========================================================
+// SERVER
+// =========================================================
+
+const PORT = process.env.PORT || 3000;
+
+app.listen(PORT, () => {
+  console.log(
+    `HADROUG DELIVERY Backend running on port ${PORT}`
+  );
+});app.use(errorHandler);
 
 // =========================================================
 // SERVER

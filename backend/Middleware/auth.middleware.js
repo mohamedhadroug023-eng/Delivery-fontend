@@ -1,5 +1,9 @@
 const jwt = require("jsonwebtoken");
 
+// =========================================================
+// AUTHENTICATE USER
+// =========================================================
+
 function authenticate(req, res, next) {
   try {
     const authHeader = req.headers.authorization;
@@ -37,6 +41,25 @@ function authenticate(req, res, next) {
   }
 }
 
+// =========================================================
+// AUTHORIZE ROLES
+// =========================================================
+
+function authorize(...allowedRoles) {
+  return (req, res, next) => {
+
+    if (!req.user || !allowedRoles.includes(req.user.role)) {
+      return res.status(403).json({
+        success: false,
+        message: "Access denied"
+      });
+    }
+
+    next();
+  };
+}
+
 module.exports = {
-  authenticate
+  authenticate,
+  authorize
 };

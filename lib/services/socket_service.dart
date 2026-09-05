@@ -7,16 +7,15 @@ class SocketService {
   bool get isConnected =>
       _socket?.connected ?? false;
 
-  // =========================================================
-  // CONNECT
-  // =========================================================
+  /* =======================================================
+     CONNECT
+  ======================================================= */
 
   void connect({
     required String serverUrl,
     required String token,
-    required int driverId,
+    String? role,
   }) {
-    // إذا كان هناك اتصال سابق، نغلقه أولًا
     disconnect();
 
     _socket = io.io(
@@ -34,17 +33,27 @@ class SocketService {
     );
 
     _socket!.onConnect((_) {
-      print('Socket connected: ${_socket!.id}');
-
-      // دخول غرفة السائق
-      _socket!.emit(
-        'driver_join',
-        driverId,
+      print(
+        'Socket connected: ${_socket!.id}',
       );
+
+      /*
+       * Backend already identifies the user
+       * from the JWT token.
+       *
+       * No driverId / restaurantId is trusted
+       * from the client.
+       */
+
+      if (role == 'driver') {
+        _socket!.emit('driver_join');
+      }
     });
 
     _socket!.onDisconnect((_) {
-      print('Socket disconnected');
+      print(
+        'Socket disconnected',
+      );
     });
 
     _socket!.onConnectError((error) {
@@ -53,26 +62,47 @@ class SocketService {
       );
     });
 
+    _socket!.onError((error) {
+      print(
+        'Socket error: $error',
+      );
+    });
+
     _socket!.connect();
   }
 
-  // =========================================================
-  // LISTEN TO EVENT
-  // =========================================================
+
+  /* =======================================================
+     LISTEN
+  ======================================================= */
 
   void on(
     String event,
     Function(dynamic data) callback,
   ) {
+    _socket?.off(event);
+
     _socket?.on(
       event,
       callback,
     );
   }
 
-  // =========================================================
-  // EMIT EVENT
-  // =========================================================
+
+  /* =======================================================
+     REMOVE LISTENER
+  ======================================================= */
+
+  void off(
+    String event,
+  ) {
+    _socket?.off(event);
+  }
+
+
+  /* =======================================================
+     EMIT
+  ======================================================= */
 
   void emit(
     String event,
@@ -84,9 +114,10 @@ class SocketService {
     );
   }
 
-  // =========================================================
-  // DISCONNECT
-  // =========================================================
+
+  /* =======================================================
+     DISCONNECT
+  ======================================================= */
 
   void disconnect() {
     _socket?.disconnect();

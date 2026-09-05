@@ -2,41 +2,51 @@ const bcrypt = require("bcrypt");
 
 const pool = require("../config/database");
 
+const {
+  notifyPickupVerified
+} = require("../services/notification.service");
 
-// =========================================================
-// GET RESTAURANT PROFILE
-// =========================================================
+
+/* =========================================================
+   GET RESTAURANT PROFILE
+========================================================= */
 
 async function getProfile(req, res, next) {
   try {
-    const [restaurants] = await pool.execute(
-      `
-      SELECT
-        r.id,
-        r.name,
-        r.address,
-        r.latitude,
-        r.longitude,
-        r.balance_due,
-        r.is_active,
-        r.created_at
-      FROM restaurants r
-      WHERE r.user_id = ?
-      LIMIT 1
-      `,
-      [req.user.id]
-    );
+
+    const [restaurants] =
+      await pool.execute(
+        `
+        SELECT
+          r.id,
+          r.name,
+          r.address,
+          r.latitude,
+          r.longitude,
+          r.balance_due,
+          r.is_active,
+          r.created_at
+        FROM restaurants r
+        WHERE r.user_id = ?
+        LIMIT 1
+        `,
+        [req.user.id]
+      );
+
 
     if (restaurants.length === 0) {
       return res.status(404).json({
         success: false,
-        message: "Restaurant profile not found"
+        message:
+          "Restaurant profile not found"
       });
     }
 
+
     return res.status(200).json({
       success: true,
-      restaurant: restaurants[0]
+      restaurant:
+        restaurants[0]
     });
 
   } catch (error) {
@@ -45,57 +55,75 @@ async function getProfile(req, res, next) {
 }
 
 
-// =========================================================
-// GET RESTAURANT ORDERS
-// =========================================================
+/* =========================================================
+   GET RESTAURANT ORDERS
+========================================================= */
 
 async function getOrders(req, res, next) {
   try {
-    const [restaurants] = await pool.execute(
-      `
-      SELECT id
-      FROM restaurants
-      WHERE user_id = ?
-      LIMIT 1
-      `,
-      [req.user.id]
-    );
+
+    const [restaurants] =
+      await pool.execute(
+        `
+        SELECT id
+        FROM restaurants
+        WHERE user_id = ?
+        LIMIT 1
+        `,
+        [req.user.id]
+      );
+
 
     if (restaurants.length === 0) {
       return res.status(404).json({
         success: false,
-        message: "Restaurant profile not found"
+        message:
+          "Restaurant profile not found"
       });
     }
 
-    const restaurantId = restaurants[0].id;
 
-    const [orders] = await pool.execute(
-      `
-      SELECT
-        id,
-        customer_name,
-        customer_phone,
-        customer_address,
-        customer_latitude,
-        customer_longitude,
-        food_amount,
-        hadroug_fee,
-        driver_fee,
-        status,
-        driver_id,
-        created_at,
-        accepted_at,
-        pickup_verified_at,
-        picked_up_at,
-        delivered_at,
-        cancelled_at
-      FROM orders
-      WHERE restaurant_id = ?
-      ORDER BY created_at DESC
-      `,
-      [restaurantId]
-    );
+    const restaurantId =
+      restaurants[0].id;
+
+
+    const [orders] =
+      await pool.execute(
+        `
+        SELECT
+
+          id,
+
+          customer_name,
+          customer_phone,
+          customer_address,
+
+          customer_latitude,
+          customer_longitude,
+
+          food_amount,
+          hadroug_fee,
+          driver_fee,
+
+          status,
+          driver_id,
+
+          created_at,
+          accepted_at,
+          pickup_verified_at,
+          picked_up_at,
+          delivered_at,
+          cancelled_at
+
+        FROM orders
+
+        WHERE restaurant_id = ?
+
+        ORDER BY created_at DESC
+        `,
+        [restaurantId]
+      );
+
 
     return res.status(200).json({
       success: true,
@@ -108,44 +136,64 @@ async function getOrders(req, res, next) {
 }
 
 
-// =========================================================
-// VERIFY PICKUP OTP
-// =========================================================
+/* =========================================================
+   VERIFY PICKUP OTP
+========================================================= */
 
-async function verifyPickupOtp(req, res, next) {
-  const connection = await pool.getConnection();
+async function verifyPickupOtp(
+  req,
+  res,
+  next
+) {
+  const connection =
+    await pool.getConnection();
+
 
   try {
+
     const {
       order_id,
       otp
     } = req.body;
 
-    // -----------------------------------------------------
-    // VALIDATION
-    // -----------------------------------------------------
 
-    if (!order_id || otp === undefined) {
+    /* -------------------------------------------------------
+       VALIDATE INPUT
+    ------------------------------------------------------- */
+
+    if (
+      !order_id ||
+      otp === undefined
+    ) {
       return res.status(400).json({
         success: false,
-        message: "order_id and otp are required"
+        message:
+          "order_id and otp are required"
       });
     }
 
-    const cleanOtp = String(otp).trim();
 
-    if (!/^\d{4}$/.test(cleanOtp)) {
+    const cleanOtp =
+      String(otp).trim();
+
+
+    if (
+      !/^\d{4}$/.test(cleanOtp)
+    ) {
       return res.status(400).json({
         success: false,
-        message: "OTP must contain exactly 4 digits"
+        message:
+          "OTP must contain exactly 4 digits"
       });
     }
+
 
     await connection.beginTransaction();
 
-    // -----------------------------------------------------
-    // GET RESTAURANT
-    // -----------------------------------------------------
+
+    /* -------------------------------------------------------
+       GET RESTAURANT
+    ------------------------------------------------------- */
 
     const [restaurants] =
       await connection.execute(
@@ -154,76 +202,108 @@ async function verifyPickupOtp(req, res, next) {
           id,
           is_active
         FROM restaurants
+
         WHERE user_id = ?
+
         LIMIT 1
+
         FOR UPDATE
         `,
         [req.user.id]
       );
 
+
     if (restaurants.length === 0) {
+
       await connection.rollback();
 
       return res.status(404).json({
         success: false,
-        message: "Restaurant profile not found"
+        message:
+          "Restaurant profile not found"
       });
     }
 
-    const restaurant = restaurants[0];
+
+    const restaurant =
+      restaurants[0];
+
+
+    /* -------------------------------------------------------
+       CHECK RESTAURANT STATUS
+    ------------------------------------------------------- */
 
     if (!restaurant.is_active) {
+
       await connection.rollback();
 
       return res.status(403).json({
         success: false,
-        message: "Restaurant account is inactive"
+        message:
+          "Restaurant account is inactive"
       });
     }
 
-    const restaurantId = restaurant.id;
 
-    // -----------------------------------------------------
-    // GET ORDER
-    // -----------------------------------------------------
+    const restaurantId =
+      restaurant.id;
+
+
+    /* -------------------------------------------------------
+       GET ORDER
+    ------------------------------------------------------- */
 
     const [orders] =
       await connection.execute(
         `
         SELECT
+
           id,
           restaurant_id,
           driver_id,
+
           status,
+
           pickup_otp_hash,
           pickup_otp_expires_at
+
         FROM orders
+
         WHERE id = ?
+
         LIMIT 1
+
         FOR UPDATE
         `,
         [order_id]
       );
 
+
     if (orders.length === 0) {
+
       await connection.rollback();
 
       return res.status(404).json({
         success: false,
-        message: "Order not found"
+        message:
+          "Order not found"
       });
     }
 
-    const order = orders[0];
 
-    // -----------------------------------------------------
-    // CHECK RESTAURANT OWNERSHIP
-    // -----------------------------------------------------
+    const order =
+      orders[0];
+
+
+    /* -------------------------------------------------------
+       CHECK RESTAURANT OWNERSHIP
+    ------------------------------------------------------- */
 
     if (
       Number(order.restaurant_id) !==
       Number(restaurantId)
     ) {
+
       await connection.rollback();
 
       return res.status(403).json({
@@ -233,11 +313,16 @@ async function verifyPickupOtp(req, res, next) {
       });
     }
 
-    // -----------------------------------------------------
-    // CHECK STATUS
-    // -----------------------------------------------------
 
-    if (order.status !== "driver_arrived") {
+    /* -------------------------------------------------------
+       CHECK DRIVER ARRIVAL
+    ------------------------------------------------------- */
+
+    if (
+      order.status !==
+      "driver_arrived"
+    ) {
+
       await connection.rollback();
 
       return res.status(409).json({
@@ -247,11 +332,13 @@ async function verifyPickupOtp(req, res, next) {
       });
     }
 
-    // -----------------------------------------------------
-    // CHECK OTP EXISTENCE
-    // -----------------------------------------------------
+
+    /* -------------------------------------------------------
+       CHECK OTP EXISTENCE
+    ------------------------------------------------------- */
 
     if (!order.pickup_otp_hash) {
+
       await connection.rollback();
 
       return res.status(409).json({
@@ -261,9 +348,10 @@ async function verifyPickupOtp(req, res, next) {
       });
     }
 
-    // -----------------------------------------------------
-    // CHECK OTP EXPIRATION
-    // -----------------------------------------------------
+
+    /* -------------------------------------------------------
+       CHECK OTP EXPIRATION
+    ------------------------------------------------------- */
 
     if (
       !order.pickup_otp_expires_at ||
@@ -271,6 +359,7 @@ async function verifyPickupOtp(req, res, next) {
         order.pickup_otp_expires_at
       ).getTime() <= Date.now()
     ) {
+
       await connection.rollback();
 
       return res.status(409).json({
@@ -280,9 +369,10 @@ async function verifyPickupOtp(req, res, next) {
       });
     }
 
-    // -----------------------------------------------------
-    // VERIFY OTP
-    // -----------------------------------------------------
+
+    /* -------------------------------------------------------
+       VERIFY OTP
+    ------------------------------------------------------- */
 
     const validOtp =
       await bcrypt.compare(
@@ -290,68 +380,121 @@ async function verifyPickupOtp(req, res, next) {
         order.pickup_otp_hash
       );
 
+
     if (!validOtp) {
+
       await connection.rollback();
 
       return res.status(401).json({
         success: false,
-        message: "Invalid OTP"
+        message:
+          "Invalid OTP"
       });
     }
 
-    // -----------------------------------------------------
-    // MARK ORDER AS PICKED UP
-    // -----------------------------------------------------
+
+    /* -------------------------------------------------------
+       UPDATE ORDER
+    ------------------------------------------------------- */
 
     await connection.execute(
       `
       UPDATE orders
+
       SET
+
         status = 'picked_up',
-        pickup_verified_at = CURRENT_TIMESTAMP,
-        picked_up_at = CURRENT_TIMESTAMP
+
+        pickup_verified_at =
+          CURRENT_TIMESTAMP,
+
+        picked_up_at =
+          CURRENT_TIMESTAMP
+
       WHERE id = ?
       `,
       [order_id]
     );
 
-    // -----------------------------------------------------
-    // ORDER EVENT
-    // -----------------------------------------------------
+
+    /* -------------------------------------------------------
+       CREATE ORDER EVENT
+    ------------------------------------------------------- */
 
     await connection.execute(
       `
       INSERT INTO order_events (
+
         order_id,
         actor_user_id,
+
         event_type,
+
         old_status,
         new_status,
+
         description
+
       )
+
       VALUES (?, ?, ?, ?, ?, ?)
       `,
       [
         order_id,
+
         req.user.id,
+
         "pickup_verified",
+
         "driver_arrived",
+
         "picked_up",
+
         "Pickup verified successfully using OTP"
       ]
     );
 
+
+    /* -------------------------------------------------------
+       COMMIT
+    ------------------------------------------------------- */
+
     await connection.commit();
 
-    // -----------------------------------------------------
-    // SUCCESS
-    // -----------------------------------------------------
+
+    /* -------------------------------------------------------
+       REAL-TIME NOTIFICATION
+    ------------------------------------------------------- */
+
+    try {
+
+      await notifyPickupVerified(
+        order_id,
+        order.driver_id
+      );
+
+    } catch (notificationError) {
+
+      console.error(
+        "Pickup notification error:",
+        notificationError
+      );
+    }
+
+
+    /* -------------------------------------------------------
+       RESPONSE
+    ------------------------------------------------------- */
 
     return res.status(200).json({
+
       success: true,
+
       message:
         "Pickup verified successfully",
+
       order_id
+
     });
 
   } catch (error) {
@@ -363,17 +506,22 @@ async function verifyPickupOtp(req, res, next) {
     next(error);
 
   } finally {
+
     connection.release();
   }
 }
 
 
-// =========================================================
-// EXPORTS
-// =========================================================
+/* =========================================================
+   EXPORTS
+========================================================= */
 
 module.exports = {
+
   getProfile,
+
   getOrders,
+
   verifyPickupOtp
+
 };

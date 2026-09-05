@@ -6,7 +6,10 @@ const {
   updateOnlineStatus,
   updateLocation,
   acceptOrderOffer,
-  rejectOrderOffer
+  rejectOrderOffer,
+  arriveAtRestaurant,
+  startDelivery,
+  completeDelivery
 } = require("../controllers/driver.controller");
 
 const {
@@ -86,6 +89,42 @@ router.post(
   authenticate,
   authorize("driver"),
   rejectOrderOffer
+);
+
+// =========================================================
+// DRIVER ARRIVED AT RESTAURANT
+// =========================================================
+
+// POST /api/driver/orders/arrive
+router.post(
+  "/orders/arrive",
+  authenticate,
+  authorize("driver"),
+  arriveAtRestaurant
+);
+
+// =========================================================
+// START DELIVERY
+// =========================================================
+
+// POST /api/driver/orders/start-delivery
+router.post(
+  "/orders/start-delivery",
+  authenticate,
+  authorize("driver"),
+  startDelivery
+);
+
+// =========================================================
+// COMPLETE DELIVERY
+// =========================================================
+
+// POST /api/driver/orders/deliver
+router.post(
+  "/orders/deliver",
+  authenticate,
+  authorize("driver"),
+  completeDelivery
 );
 
 module.exports = router;

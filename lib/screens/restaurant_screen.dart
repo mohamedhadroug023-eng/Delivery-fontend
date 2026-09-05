@@ -32,12 +32,15 @@ class _RestaurantScreenState
 
     loadData();
 
-    // تحديث الطلبات تلقائيًا كل 5 ثوانٍ
     _refreshTimer = Timer.periodic(
       const Duration(seconds: 5),
       (_) {
-        if (!loading && !creatingOrder && !verifyingOtp) {
-          loadData(showLoading: false);
+        if (!loading &&
+            !creatingOrder &&
+            !verifyingOtp) {
+          loadData(
+            showLoading: false,
+          );
         }
       },
     );
@@ -77,7 +80,8 @@ class _RestaurantScreenState
 
       final profileData =
           Map<String, dynamic>.from(
-        profileResponse['restaurant'] ?? {},
+        profileResponse['restaurant'] ??
+            {},
       );
 
       final rawOrders =
@@ -87,7 +91,9 @@ class _RestaurantScreenState
           List<Map<String, dynamic>>.from(
         rawOrders.map(
           (order) =>
-              Map<String, dynamic>.from(order),
+              Map<String, dynamic>.from(
+            order,
+          ),
         ),
       );
 
@@ -139,7 +145,9 @@ class _RestaurantScreenState
         double.tryParse(longitude.trim());
 
     final amount =
-        double.tryParse(foodAmount.trim());
+        double.tryParse(
+      foodAmount.trim(),
+    );
 
     final fee = double.tryParse(
       driverFee.trim().isEmpty
@@ -167,7 +175,8 @@ class _RestaurantScreenState
       return;
     }
 
-    if (amount <= 0 || fee < 0) {
+    if (amount <= 0 ||
+        fee < 0) {
       _showMessage(
         'قيمة الطلب أو أجرة السائق غير صحيحة',
       );
@@ -189,10 +198,14 @@ class _RestaurantScreenState
               customerPhone.trim(),
           'customer_address':
               customerAddress.trim(),
-          'customer_latitude': lat,
-          'customer_longitude': lng,
-          'food_amount': amount,
-          'driver_fee': fee,
+          'customer_latitude':
+              lat,
+          'customer_longitude':
+              lng,
+          'food_amount':
+              amount,
+          'driver_fee':
+              fee,
         },
       );
 
@@ -205,6 +218,7 @@ class _RestaurantScreenState
         );
       }
 
+      // إغلاق نافذة إنشاء الطلب
       Navigator.of(context).pop();
 
       _showMessage(
@@ -231,11 +245,12 @@ class _RestaurantScreenState
   // VERIFY PICKUP OTP
   // =========================================================
 
-  Future<void> verifyPickupOtp({
+  Future<bool> verifyPickupOtp({
     required int orderId,
     required String otp,
   }) async {
-    final cleanOtp = otp.trim();
+    final cleanOtp =
+        otp.trim();
 
     if (!RegExp(
       r'^\d{4}$',
@@ -243,7 +258,8 @@ class _RestaurantScreenState
       _showMessage(
         'رمز OTP يجب أن يتكون من 4 أرقام',
       );
-      return;
+
+      return false;
     }
 
     setState(() {
@@ -255,12 +271,14 @@ class _RestaurantScreenState
           await ApiService.post(
         '/restaurant/orders/verify-pickup',
         {
-          'order_id': orderId,
-          'otp': cleanOtp,
+          'order_id':
+              orderId,
+          'otp':
+              cleanOtp,
         },
       );
 
-      if (!mounted) return;
+      if (!mounted) return false;
 
       if (response['success'] != true) {
         throw Exception(
@@ -269,8 +287,6 @@ class _RestaurantScreenState
         );
       }
 
-      Navigator.of(context).pop();
-
       _showMessage(
         'تم تأكيد استلام الطلب بنجاح ✅',
       );
@@ -278,10 +294,14 @@ class _RestaurantScreenState
       await loadData(
         showLoading: false,
       );
+
+      return true;
     } catch (error) {
-      if (!mounted) return;
+      if (!mounted) return false;
 
       _showError(error);
+
+      return false;
     } finally {
       if (mounted) {
         setState(() {
@@ -327,7 +347,7 @@ class _RestaurantScreenState
           'تعذر فتح Google Maps',
         );
       }
-    } catch (error) {
+    } catch (_) {
       if (mounted) {
         _showMessage(
           'حدث خطأ أثناء فتح الخريطة',
@@ -349,7 +369,8 @@ class _RestaurantScreenState
       ..hideCurrentSnackBar()
       ..showSnackBar(
         SnackBar(
-          content: Text(message),
+          content:
+              Text(message),
         ),
       );
   }
@@ -374,7 +395,8 @@ class _RestaurantScreenState
     Map<String, dynamic> order,
   ) {
     final status =
-        order['status']?.toString();
+        order['status']
+            ?.toString();
 
     return [
       'pending',
@@ -417,14 +439,18 @@ class _RestaurantScreenState
 
   int get activeOrdersCount {
     return orders
-        .where(_isActiveOrder)
+        .where(
+          _isActiveOrder,
+        )
         .length;
   }
 
   List<Map<String, dynamic>>
       get activeOrders {
     return orders
-        .where(_isActiveOrder)
+        .where(
+          _isActiveOrder,
+        )
         .toList();
   }
 
@@ -439,10 +465,13 @@ class _RestaurantScreenState
     return Scaffold(
       appBar: AppBar(
         title:
-            const Text('لوحة المطعم'),
+            const Text(
+          'لوحة المطعم',
+        ),
         actions: [
           IconButton(
-            icon: const Icon(
+            icon:
+                const Icon(
               Icons.refresh,
             ),
             onPressed:
@@ -452,7 +481,8 @@ class _RestaurantScreenState
                         loadData(),
           ),
           IconButton(
-            icon: const Icon(
+            icon:
+                const Icon(
               Icons.notifications_none,
             ),
             onPressed: () {},
@@ -469,7 +499,8 @@ class _RestaurantScreenState
           : RefreshIndicator(
               onRefresh: () =>
                   loadData(
-                showLoading: false,
+                showLoading:
+                    false,
               ),
               child:
                   SingleChildScrollView(
@@ -479,11 +510,13 @@ class _RestaurantScreenState
                     const EdgeInsets.all(
                   16,
                 ),
-                child: Column(
+                child:
+                    Column(
                   crossAxisAlignment:
                       CrossAxisAlignment
                           .start,
                   children: [
+
                     Text(
                       restaurant?[
                                   'name']
@@ -654,9 +687,8 @@ class _RestaurantScreenState
                                 .history,
                             title:
                                 'سجل الطلبات',
-                            onTap: () {
-                              _showHistoryDialog();
-                            },
+                            onTap:
+                                _showHistoryDialog,
                           ),
                         ),
                         const SizedBox(
@@ -696,7 +728,8 @@ class _RestaurantScreenState
             const EdgeInsets.all(
           16,
         ),
-        child: Column(
+        child:
+            Column(
           children: [
             Icon(
               icon,
@@ -739,7 +772,8 @@ class _RestaurantScreenState
 
     final balanceNumber =
         double.tryParse(
-              balance?.toString() ??
+              balance
+                      ?.toString() ??
                   '',
             ) ??
             0;
@@ -750,11 +784,13 @@ class _RestaurantScreenState
             const EdgeInsets.all(
           18,
         ),
-        child: Row(
+        child:
+            Row(
           children: [
             Container(
               padding:
-                  const EdgeInsets.all(
+                  const EdgeInsets
+                      .all(
                 12,
               ),
               decoration:
@@ -768,7 +804,8 @@ class _RestaurantScreenState
                   14,
                 ),
               ),
-              child: const Icon(
+              child:
+                  const Icon(
                 Icons
                     .account_balance_wallet,
                 color: orange,
@@ -811,7 +848,7 @@ class _RestaurantScreenState
   }
 
   // =========================================================
-  // EMPTY
+  // EMPTY ORDERS
   // =========================================================
 
   Widget _emptyOrdersCard() {
@@ -821,13 +858,17 @@ class _RestaurantScreenState
             const EdgeInsets.all(
           25,
         ),
-        child: Center(
-          child: Column(
+        child:
+            Center(
+          child:
+              Column(
             children: const [
               Icon(
-                Icons.inbox_outlined,
+                Icons
+                    .inbox_outlined,
                 size: 50,
-                color: Colors.grey,
+                color:
+                    Colors.grey,
               ),
               SizedBox(
                 height: 10,
@@ -868,8 +909,9 @@ class _RestaurantScreenState
                     .trim()
                     .isNotEmpty ==
                 true
-            ? order['customer_name']
-                  .toString()
+            ? order[
+                    'customer_name']
+                .toString()
             : 'زبون';
 
     final phone =
@@ -915,11 +957,13 @@ class _RestaurantScreenState
             const EdgeInsets.all(
           16,
         ),
-        child: Column(
+        child:
+            Column(
           crossAxisAlignment:
               CrossAxisAlignment
                   .start,
           children: [
+
             Row(
               mainAxisAlignment:
                   MainAxisAlignment
@@ -1057,8 +1101,7 @@ class _RestaurantScreenState
                             },
                   icon:
                       const Icon(
-                    Icons
-                        .verified,
+                    Icons.verified,
                   ),
                   label:
                       const Text(
@@ -1172,7 +1215,8 @@ class _RestaurantScreenState
           12,
         ),
       ),
-      child: Row(
+      child:
+          Row(
         children: [
           Icon(
             icon,
@@ -1183,7 +1227,8 @@ class _RestaurantScreenState
             width: 8,
           ),
           Expanded(
-            child: Column(
+            child:
+                Column(
               crossAxisAlignment:
                   CrossAxisAlignment
                       .start,
@@ -1241,7 +1286,8 @@ class _RestaurantScreenState
           12,
         ),
       ),
-      child: Text(
+      child:
+          Text(
         text,
         style:
             const TextStyle(
@@ -1252,7 +1298,7 @@ class _RestaurantScreenState
   }
 
   // =========================================================
-  // STATUS
+  // STATUS BADGE
   // =========================================================
 
   Widget _statusBadge(
@@ -1313,7 +1359,8 @@ class _RestaurantScreenState
 
     return Container(
       padding:
-          const EdgeInsets.symmetric(
+          const EdgeInsets
+              .symmetric(
         horizontal: 10,
         vertical: 5,
       ),
@@ -1328,7 +1375,8 @@ class _RestaurantScreenState
           20,
         ),
       ),
-      child: Text(
+      child:
+          Text(
         text,
         style:
             const TextStyle(
@@ -1351,18 +1399,21 @@ class _RestaurantScreenState
     required VoidCallback onTap,
   }) {
     return Card(
-      child: InkWell(
+      child:
+          InkWell(
         onTap: onTap,
         borderRadius:
             BorderRadius.circular(
           18,
         ),
-        child: Padding(
+        child:
+            Padding(
           padding:
               const EdgeInsets.all(
             18,
           ),
-          child: Column(
+          child:
+              Column(
             children: [
               Icon(
                 icon,
@@ -1401,45 +1452,60 @@ class _RestaurantScreenState
 
     showDialog(
       context: context,
-      barrierDismissible: false,
-      builder: (dialogContext) {
+      barrierDismissible:
+          false,
+      builder:
+          (dialogContext) {
         return AlertDialog(
-          title: const Text(
+          title:
+              const Text(
             'تأكيد استلام الطلب',
           ),
-          content: Column(
+          content:
+              Column(
             mainAxisSize:
                 MainAxisSize.min,
             children: [
+
               const Icon(
-                Icons.verified_user,
+                Icons
+                    .verified_user,
                 color: orange,
                 size: 55,
               ),
+
               const SizedBox(
                 height: 12,
               ),
+
               const Text(
                 'اطلب من السائق رمز OTP المكون من 4 أرقام.',
                 textAlign:
                     TextAlign.center,
               ),
+
               const SizedBox(
                 height: 18,
               ),
+
               TextField(
                 controller:
                     otpController,
-                autofocus: true,
-                maxLength: 4,
+                autofocus:
+                    true,
+                maxLength:
+                    4,
                 textAlign:
                     TextAlign.center,
                 keyboardType:
-                    TextInputType.number,
+                    TextInputType
+                        .number,
                 decoration:
                     const InputDecoration(
-                  labelText: 'رمز OTP',
-                  hintText: '0000',
+                  labelText:
+                      'رمز OTP',
+                  hintText:
+                      '0000',
                   prefixIcon:
                       Icon(
                     Icons.lock,
@@ -1449,6 +1515,7 @@ class _RestaurantScreenState
             ],
           ),
           actions: [
+
             TextButton(
               onPressed:
                   verifyingOtp
@@ -1459,20 +1526,32 @@ class _RestaurantScreenState
                           ).pop();
                         },
               child:
-                  const Text('إلغاء'),
+                  const Text(
+                'إلغاء',
+              ),
             ),
+
             ElevatedButton(
               onPressed:
                   verifyingOtp
                       ? null
                       : () async {
-                          await verifyPickupOtp(
+                          final success =
+                              await verifyPickupOtp(
                             orderId:
                                 orderId,
                             otp:
                                 otpController
                                     .text,
                           );
+
+                          if (success &&
+                              dialogContext
+                                  .mounted) {
+                            Navigator.of(
+                              dialogContext,
+                            ).pop();
+                          }
                         },
               child:
                   verifyingOtp
@@ -1519,8 +1598,10 @@ class _RestaurantScreenState
 
     showModalBottomSheet(
       context: context,
-      isScrollControlled: true,
-      showDragHandle: true,
+      isScrollControlled:
+          true,
+      showDragHandle:
+          true,
       builder: (_) {
         return SizedBox(
           height:
@@ -1528,16 +1609,20 @@ class _RestaurantScreenState
                     context,
                   ).size.height *
                   .75,
-          child: Padding(
+          child:
+              Padding(
             padding:
-                const EdgeInsets.all(
+                const EdgeInsets
+                    .all(
               16,
             ),
-            child: Column(
+            child:
+                Column(
               crossAxisAlignment:
                   CrossAxisAlignment
                       .start,
               children: [
+
                 const Text(
                   'سجل الطلبات',
                   style:
@@ -1547,9 +1632,11 @@ class _RestaurantScreenState
                         FontWeight.bold,
                   ),
                 ),
+
                 const SizedBox(
                   height: 15,
                 ),
+
                 Expanded(
                   child:
                       history.isEmpty
@@ -1570,7 +1657,10 @@ class _RestaurantScreenState
                                     8,
                               ),
                               itemBuilder:
-                                  (_, index) {
+                                  (
+                                _,
+                                index,
+                              ) {
                                 final order =
                                     history[
                                         index];
@@ -1584,7 +1674,9 @@ class _RestaurantScreenState
                                     ),
                                   ),
                                   tileColor:
-                                      Colors.grey.shade100,
+                                      Colors
+                                          .grey
+                                          .shade100,
                                   title:
                                       Text(
                                     '#${order['id']} - ${order['customer_name'] ?? 'زبون'}',
@@ -1643,15 +1735,17 @@ class _RestaurantScreenState
 
     showModalBottomSheet(
       context: context,
-      isScrollControlled: true,
-      showDragHandle: true,
+      isScrollControlled:
+          true,
+      showDragHandle:
+          true,
       builder: (_) {
         return StatefulBuilder(
           builder:
               (
-                modalContext,
-                setModalState,
-              ) {
+            modalContext,
+            setModalState,
+          ) {
             return Padding(
               padding:
                   EdgeInsets.only(
@@ -1660,15 +1754,19 @@ class _RestaurantScreenState
                 bottom:
                     MediaQuery.of(
                           modalContext,
-                        ).viewInsets.bottom +
+                        )
+                            .viewInsets
+                            .bottom +
                         20,
               ),
               child:
                   SingleChildScrollView(
-                child: Column(
+                child:
+                    Column(
                   mainAxisSize:
                       MainAxisSize.min,
                   children: [
+
                     const Text(
                       'طلب توصيل جديد',
                       style:
@@ -1705,7 +1803,8 @@ class _RestaurantScreenState
                       controller:
                           customerPhone,
                       keyboardType:
-                          TextInputType.phone,
+                          TextInputType
+                              .phone,
                       decoration:
                           const InputDecoration(
                         labelText:
@@ -1727,7 +1826,8 @@ class _RestaurantScreenState
                       keyboardType:
                           const TextInputType
                               .numberWithOptions(
-                        decimal: true,
+                        decimal:
+                            true,
                       ),
                       decoration:
                           const InputDecoration(
@@ -1751,7 +1851,8 @@ class _RestaurantScreenState
                       keyboardType:
                           const TextInputType
                               .numberWithOptions(
-                        decimal: true,
+                        decimal:
+                            true,
                       ),
                       decoration:
                           const InputDecoration(
@@ -1772,7 +1873,8 @@ class _RestaurantScreenState
                     TextField(
                       controller:
                           customerAddress,
-                      maxLines: 2,
+                      maxLines:
+                          2,
                       decoration:
                           const InputDecoration(
                         labelText:
@@ -1791,6 +1893,7 @@ class _RestaurantScreenState
 
                     Row(
                       children: [
+
                         Expanded(
                           child:
                               TextField(
@@ -1811,9 +1914,11 @@ class _RestaurantScreenState
                             ),
                           ),
                         ),
+
                         const SizedBox(
                           width: 10,
                         ),
+
                         Expanded(
                           child:
                               TextField(
@@ -1912,7 +2017,8 @@ class _RestaurantScreenState
     dynamic value,
   ) {
     return double.tryParse(
-          value?.toString() ?? '',
+          value?.toString() ??
+              '',
         ) ??
         0;
   }

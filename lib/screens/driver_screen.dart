@@ -28,10 +28,6 @@ class _DriverScreenState extends State<DriverScreen> {
     loadData();
   }
 
-  // =========================================================
-  // LOAD DATA
-  // =========================================================
-
   Future<void> loadData() async {
     if (!mounted) return;
 
@@ -85,10 +81,6 @@ class _DriverScreenState extends State<DriverScreen> {
     }
   }
 
-  // =========================================================
-  // UPDATE ONLINE STATUS
-  // =========================================================
-
   Future<void> updateOnlineStatus(
     bool value,
   ) async {
@@ -138,10 +130,6 @@ class _DriverScreenState extends State<DriverScreen> {
     }
   }
 
-  // =========================================================
-  // CURRENT ORDER
-  // =========================================================
-
   Map<String, dynamic>? get currentOrder {
     for (final order in orders) {
       final status =
@@ -162,10 +150,6 @@ class _DriverScreenState extends State<DriverScreen> {
     return null;
   }
 
-  // =========================================================
-  // TODAY ORDERS
-  // =========================================================
-
   int get todayOrdersCount {
     final now = DateTime.now();
 
@@ -184,10 +168,6 @@ class _DriverScreenState extends State<DriverScreen> {
           date.day == now.day;
     }).length;
   }
-
-  // =========================================================
-  // TODAY INCOME
-  // =========================================================
 
   double get todayIncome {
     final now = DateTime.now();
@@ -228,10 +208,6 @@ class _DriverScreenState extends State<DriverScreen> {
 
     return total;
   }
-
-  // =========================================================
-  // ACCEPT ORDER
-  // =========================================================
 
   Future<void> acceptOrder(
     Map<String, dynamic> order,
@@ -287,10 +263,6 @@ class _DriverScreenState extends State<DriverScreen> {
     }
   }
 
-  // =========================================================
-  // REJECT ORDER
-  // =========================================================
-
   Future<void> rejectOrder(
     Map<String, dynamic> order,
   ) async {
@@ -345,10 +317,6 @@ class _DriverScreenState extends State<DriverScreen> {
     }
   }
 
-  // =========================================================
-  // BUILD
-  // =========================================================
-
   @override
   Widget build(
     BuildContext context,
@@ -374,7 +342,6 @@ class _DriverScreenState extends State<DriverScreen> {
           ),
         ],
       ),
-
       body: loading
           ? const Center(
               child:
@@ -393,11 +360,9 @@ class _DriverScreenState extends State<DriverScreen> {
                 child: Column(
                   children: [
                     _statusCard(),
-
                     const SizedBox(
                       height: 15,
                     ),
-
                     Row(
                       children: [
                         Expanded(
@@ -420,11 +385,9 @@ class _DriverScreenState extends State<DriverScreen> {
                         ),
                       ],
                     ),
-
                     const SizedBox(
                       height: 25,
                     ),
-
                     const Align(
                       alignment:
                           Alignment.centerRight,
@@ -437,17 +400,13 @@ class _DriverScreenState extends State<DriverScreen> {
                         ),
                       ),
                     ),
-
                     const SizedBox(
                       height: 12,
                     ),
-
                     _currentOrder(),
-
                     const SizedBox(
                       height: 25,
                     ),
-
                     const Align(
                       alignment:
                           Alignment.centerRight,
@@ -460,11 +419,9 @@ class _DriverScreenState extends State<DriverScreen> {
                         ),
                       ),
                     ),
-
                     const SizedBox(
                       height: 12,
                     ),
-
                     _ordersHistory(),
                   ],
                 ),
@@ -472,10 +429,6 @@ class _DriverScreenState extends State<DriverScreen> {
             ),
     );
   }
-
-  // =========================================================
-  // STATUS CARD
-  // =========================================================
 
   Widget _statusCard() {
     return Card(
@@ -495,11 +448,9 @@ class _DriverScreenState extends State<DriverScreen> {
                 shape: BoxShape.circle,
               ),
             ),
-
             const SizedBox(
               width: 10,
             ),
-
             Expanded(
               child: Text(
                 online
@@ -512,7 +463,6 @@ class _DriverScreenState extends State<DriverScreen> {
                 ),
               ),
             ),
-
             updatingStatus
                 ? const SizedBox(
                     width: 22,
@@ -535,10 +485,6 @@ class _DriverScreenState extends State<DriverScreen> {
     );
   }
 
-  // =========================================================
-  // STAT CARD
-  // =========================================================
-
   Widget _stat(
     IconData icon,
     String title,
@@ -555,11 +501,9 @@ class _DriverScreenState extends State<DriverScreen> {
               color: orange,
               size: 28,
             ),
-
             const SizedBox(
               height: 8,
             ),
-
             Text(
               value,
               style:
@@ -569,11 +513,9 @@ class _DriverScreenState extends State<DriverScreen> {
                     FontWeight.bold,
               ),
             ),
-
             const SizedBox(
               height: 3,
             ),
-
             Text(
               title,
               style:
@@ -587,10 +529,6 @@ class _DriverScreenState extends State<DriverScreen> {
       ),
     );
   }
-
-  // =========================================================
-  // CURRENT ORDER
-  // =========================================================
 
   Widget _currentOrder() {
     final order = currentOrder;
@@ -607,11 +545,9 @@ class _DriverScreenState extends State<DriverScreen> {
                 size: 55,
                 color: Colors.grey,
               ),
-
               const SizedBox(
                 height: 10,
               ),
-
               const Text(
                 'لا يوجد طلب حالي',
                 style: TextStyle(
@@ -620,11 +556,9 @@ class _DriverScreenState extends State<DriverScreen> {
                       FontWeight.bold,
                 ),
               ),
-
               const SizedBox(
                 height: 5,
               ),
-
               const Text(
                 'عند وصول طلب جديد سيظهر هنا',
                 style: TextStyle(
@@ -647,10 +581,6 @@ class _DriverScreenState extends State<DriverScreen> {
 
     return _acceptedOrderCard(order);
   }
-
-  // =========================================================
-  // NEW OFFER CARD
-  // =========================================================
 
   Widget _offerCard(
     Map<String, dynamic> order,
@@ -719,11 +649,9 @@ class _DriverScreenState extends State<DriverScreen> {
                 ),
               ],
             ),
-
             const SizedBox(
               height: 18,
             ),
-
             const Text(
               'طلب توصيل جديد',
               style: TextStyle(
@@ -732,16 +660,13 @@ class _DriverScreenState extends State<DriverScreen> {
                     FontWeight.bold,
               ),
             ),
-
             const SizedBox(
               height: 15,
             ),
-
             _infoRow(
               Icons.store,
               restaurant,
             ),
-
             if (restaurantAddress
                 .isNotEmpty) ...[
               const SizedBox(
@@ -752,29 +677,23 @@ class _DriverScreenState extends State<DriverScreen> {
                 restaurantAddress,
               ),
             ],
-
             const Divider(
               height: 25,
             ),
-
             _infoRow(
               Icons.person,
               customer,
             ),
-
             const SizedBox(
               height: 8,
             ),
-
             _infoRow(
               Icons.location_on,
               address,
             ),
-
             const SizedBox(
               height: 15,
             ),
-
             Row(
               children: [
                 const Icon(
@@ -795,11 +714,9 @@ class _DriverScreenState extends State<DriverScreen> {
                 ),
               ],
             ),
-
             const SizedBox(
               height: 20,
             ),
-
             Row(
               children: [
                 Expanded(
@@ -839,19 +756,16 @@ class _DriverScreenState extends State<DriverScreen> {
                                 ),
                               )
                             : const Icon(
-                                Icons
-                                    .check,
+                                Icons.check,
                               ),
                     label: const Text(
                       'قبول',
                     ),
                   ),
                 ),
-
                 const SizedBox(
                   width: 10,
                 ),
-
                 Expanded(
                   child:
                       OutlinedButton.icon(
@@ -893,10 +807,6 @@ class _DriverScreenState extends State<DriverScreen> {
       ),
     );
   }
-
-  // =========================================================
-  // ACCEPTED ORDER CARD
-  // =========================================================
 
   Widget _acceptedOrderCard(
     Map<String, dynamic> order,
@@ -971,16 +881,13 @@ class _DriverScreenState extends State<DriverScreen> {
                 _statusBadge(status),
               ],
             ),
-
             const SizedBox(
               height: 18,
             ),
-
             _infoRow(
               Icons.store,
               restaurant,
             ),
-
             if (restaurantAddress
                 .isNotEmpty) ...[
               const SizedBox(
@@ -991,16 +898,13 @@ class _DriverScreenState extends State<DriverScreen> {
                 restaurantAddress,
               ),
             ],
-
             const Divider(
               height: 25,
             ),
-
             _infoRow(
               Icons.person,
               customer,
             ),
-
             if (phone.isNotEmpty) ...[
               const SizedBox(
                 height: 10,
@@ -1010,20 +914,16 @@ class _DriverScreenState extends State<DriverScreen> {
                 phone,
               ),
             ],
-
             const SizedBox(
               height: 10,
             ),
-
             _infoRow(
               Icons.location_on,
               address,
             ),
-
             const SizedBox(
               height: 15,
             ),
-
             Row(
               children: [
                 const Icon(
@@ -1043,11 +943,9 @@ class _DriverScreenState extends State<DriverScreen> {
                 ),
               ],
             ),
-
             const SizedBox(
               height: 18,
             ),
-
             SizedBox(
               width:
                   double.infinity,
@@ -1067,10 +965,6 @@ class _DriverScreenState extends State<DriverScreen> {
       ),
     );
   }
-
-  // =========================================================
-  // ORDERS HISTORY
-  // =========================================================
 
   Widget _ordersHistory() {
     if (orders.isEmpty) {
@@ -1144,10 +1038,6 @@ class _DriverScreenState extends State<DriverScreen> {
     );
   }
 
-  // =========================================================
-  // INFO ROW
-  // =========================================================
-
   Widget _infoRow(
     IconData icon,
     String text,
@@ -1160,21 +1050,15 @@ class _DriverScreenState extends State<DriverScreen> {
           icon,
           color: orange,
         ),
-
         const SizedBox(
           width: 8,
         ),
-
         Expanded(
           child: Text(text),
         ),
       ],
     );
   }
-
-  // =========================================================
-  // STATUS BADGE
-  // =========================================================
 
   Widget _statusBadge(
     String status,
@@ -1250,10 +1134,6 @@ class _DriverScreenState extends State<DriverScreen> {
     );
   }
 
-  // =========================================================
-  // MESSAGE
-  // =========================================================
-
   void _showMessage(
     String message,
   ) {
@@ -1264,10 +1144,6 @@ class _DriverScreenState extends State<DriverScreen> {
       ),
     );
   }
-
-  // =========================================================
-  // ERROR
-  // =========================================================
 
   void _showError(
     Object error,

@@ -1,8 +1,13 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
 
 import '../services/api_service.dart';
 import '../services/auth_service.dart';
+import '../services/location_service.dart';
 import '../services/socket_service.dart';
+import '../widgets/map_button.dart';
 
 class DriverScreen extends StatefulWidget {
   const DriverScreen({super.key});
@@ -25,6 +30,8 @@ class _DriverScreenState extends State<DriverScreen> {
   List<Map<String, dynamic>> orders = [];
 
   final SocketService _socketService = SocketService();
+
+  StreamSubscription<Position>? _locationSubscription;
 
   @override
   void initState() {
@@ -72,8 +79,7 @@ class _DriverScreenState extends State<DriverScreen> {
 
   void _handleOrderOffer(dynamic data) {
     try {
-      if (data == null ||
-          data is! Map) {
+      if (data == null || data is! Map) {
         return;
       }
 
@@ -217,16 +223,20 @@ class _DriverScreenState extends State<DriverScreen> {
         ),
       );
 
+      final serverOnline =
+          profileData['is_online'] == true ||
+          profileData['is_online'] == 1;
+
       setState(() {
         driver = profileData;
         orders = ordersData;
-
-        online =
-            profileData['is_online'] == true ||
-            profileData['is_online'] == 1;
-
+        online = serverOnline;
         loading = false;
       });
+
+      if (serverOnline) {
+        await _startLocationTracking();
+      }
     } catch (error) {
       if (!mounted) return;
 
@@ -236,6 +246,89 @@ class _DriverScreenState extends State<DriverScreen> {
 
       _showError(error);
     }
+  }
+
+  // =========================================================
+  // GPS TRACKING
+  // =========================================================
+
+  Future<void> _startLocationTracking() async {
+    try {
+      await _locationSubscription?.cancel();
+
+      _locationSubscription = null;
+
+      final allowed =
+          await LocationService.checkPermission();
+
+      if (!allowed) {
+        if (mounted) {
+          _showMessage(
+            'يرجى السماح للتطبيق باستخدام الموقع حتى تتمكن من استقبال الطلبات القريبة',
+          );
+        }
+
+        return;
+      }
+
+      final position =
+          await LocationService.getCurrentLocation();
+
+      if (position != null) {
+        await _sendLocation(position);
+      }
+
+      _locationSubscription =
+          LocationService.locationStream().listen(
+        (Position position) async {
+          if (!online) return;
+
+          await _sendLocation(position);
+        },
+        onError: (error) {
+          debugPrint(
+            'GPS stream error: $error',
+          );
+        },
+      );
+    } catch (error) {
+      debugPrint(
+        'Start GPS error: $error',
+      );
+    }
+  }
+
+  Future<void> _sendLocation(
+    Position position,
+  ) async {
+    if (!online) return;
+
+    try {
+      await ApiService.patch(
+        '/driver/location',
+        {
+          'latitude': position.latitude,
+          'longitude': position.longitude,
+          'accuracy': position.accuracy,
+        },
+      );
+
+      debugPrint(
+        'GPS updated: '
+        '${position.latitude}, '
+        '${position.longitude}',
+      );
+    } catch (error) {
+      debugPrint(
+        'Location update error: $error',
+      );
+    }
+  }
+
+  Future<void> _stopLocationTracking() async {
+    await _locationSubscription?.cancel();
+
+    _locationSubscription = null;
   }
 
   // =========================================================
@@ -272,6 +365,12 @@ class _DriverScreenState extends State<DriverScreen> {
       setState(() {
         online = value;
       });
+
+      if (value) {
+        await _startLocationTracking();
+      } else {
+        await _stopLocationTracking();
+      }
 
       _showMessage(
         value
@@ -401,6 +500,7 @@ class _DriverScreenState extends State<DriverScreen> {
       _showMessage(
         'رقم الطلب غير موجود',
       );
+
       return;
     }
 
@@ -459,6 +559,7 @@ class _DriverScreenState extends State<DriverScreen> {
       _showMessage(
         'رقم الطلب غير موجود',
       );
+
       return;
     }
 
@@ -508,6 +609,8 @@ class _DriverScreenState extends State<DriverScreen> {
 
   @override
   void dispose() {
+    _locationSubscription?.cancel();
+
     _socketService.disconnect();
 
     super.dispose();
@@ -560,9 +663,11 @@ class _DriverScreenState extends State<DriverScreen> {
                 child: Column(
                   children: [
                     _statusCard(),
+
                     const SizedBox(
                       height: 15,
                     ),
+
                     Row(
                       children: [
                         Expanded(
@@ -573,9 +678,11 @@ class _DriverScreenState extends State<DriverScreen> {
                                 .toString(),
                           ),
                         ),
+
                         const SizedBox(
                           width: 12,
                         ),
+
                         Expanded(
                           child: _stat(
                             Icons.payments,
@@ -585,9 +692,11 @@ class _DriverScreenState extends State<DriverScreen> {
                         ),
                       ],
                     ),
+
                     const SizedBox(
                       height: 25,
                     ),
+
                     const Align(
                       alignment:
                           Alignment.centerRight,
@@ -600,13 +709,17 @@ class _DriverScreenState extends State<DriverScreen> {
                         ),
                       ),
                     ),
+
                     const SizedBox(
                       height: 12,
                     ),
+
                     _currentOrder(),
+
                     const SizedBox(
                       height: 25,
                     ),
+
                     const Align(
                       alignment:
                           Alignment.centerRight,
@@ -619,9 +732,11 @@ class _DriverScreenState extends State<DriverScreen> {
                         ),
                       ),
                     ),
+
                     const SizedBox(
                       height: 12,
                     ),
+
                     _ordersHistory(),
                   ],
                 ),
@@ -652,9 +767,11 @@ class _DriverScreenState extends State<DriverScreen> {
                 shape: BoxShape.circle,
               ),
             ),
+
             const SizedBox(
               width: 10,
             ),
+
             Expanded(
               child: Text(
                 online
@@ -667,6 +784,7 @@ class _DriverScreenState extends State<DriverScreen> {
                 ),
               ),
             ),
+
             updatingStatus
                 ? const SizedBox(
                     width: 22,
@@ -709,9 +827,11 @@ class _DriverScreenState extends State<DriverScreen> {
               color: orange,
               size: 28,
             ),
+
             const SizedBox(
               height: 8,
             ),
+
             Text(
               value,
               style:
@@ -721,9 +841,11 @@ class _DriverScreenState extends State<DriverScreen> {
                     FontWeight.bold,
               ),
             ),
+
             const SizedBox(
               height: 3,
             ),
+
             Text(
               title,
               style:
@@ -757,9 +879,11 @@ class _DriverScreenState extends State<DriverScreen> {
                 size: 55,
                 color: Colors.grey,
               ),
+
               const SizedBox(
                 height: 10,
               ),
+
               const Text(
                 'لا يوجد طلب حالي',
                 style: TextStyle(
@@ -768,9 +892,11 @@ class _DriverScreenState extends State<DriverScreen> {
                       FontWeight.bold,
                 ),
               ),
+
               const SizedBox(
                 height: 5,
               ),
+
               const Text(
                 'عند وصول طلب جديد سيظهر هنا',
                 style: TextStyle(
@@ -865,9 +991,11 @@ class _DriverScreenState extends State<DriverScreen> {
                 ),
               ],
             ),
+
             const SizedBox(
               height: 18,
             ),
+
             const Text(
               'طلب توصيل جديد',
               style: TextStyle(
@@ -876,13 +1004,16 @@ class _DriverScreenState extends State<DriverScreen> {
                     FontWeight.bold,
               ),
             ),
+
             const SizedBox(
               height: 15,
             ),
+
             _infoRow(
               Icons.store,
               restaurant,
             ),
+
             if (restaurantAddress
                 .isNotEmpty) ...[
               const SizedBox(
@@ -893,32 +1024,40 @@ class _DriverScreenState extends State<DriverScreen> {
                 restaurantAddress,
               ),
             ],
+
             const Divider(
               height: 25,
             ),
+
             _infoRow(
               Icons.person,
               customer,
             ),
+
             const SizedBox(
               height: 8,
             ),
+
             _infoRow(
               Icons.location_on,
               address,
             ),
+
             const SizedBox(
               height: 15,
             ),
+
             Row(
               children: [
                 const Icon(
                   Icons.payments,
                   color: orange,
                 ),
+
                 const SizedBox(
                   width: 8,
                 ),
+
                 Text(
                   'أجرة السائق: ${fee.toStringAsFixed(3)} د.ت',
                   style:
@@ -930,9 +1069,11 @@ class _DriverScreenState extends State<DriverScreen> {
                 ),
               ],
             ),
+
             const SizedBox(
               height: 20,
             ),
+
             Row(
               children: [
                 Expanded(
@@ -979,9 +1120,11 @@ class _DriverScreenState extends State<DriverScreen> {
                     ),
                   ),
                 ),
+
                 const SizedBox(
                   width: 10,
                 ),
+
                 Expanded(
                   child:
                       OutlinedButton.icon(
@@ -1076,6 +1219,34 @@ class _DriverScreenState extends State<DriverScreen> {
         order['status']?.toString() ??
             '';
 
+    final restaurantLatitude =
+        double.tryParse(
+      order['restaurant_latitude']
+              ?.toString() ??
+          '',
+    );
+
+    final restaurantLongitude =
+        double.tryParse(
+      order['restaurant_longitude']
+              ?.toString() ??
+          '',
+    );
+
+    final customerLatitude =
+        double.tryParse(
+      order['customer_latitude']
+              ?.toString() ??
+          '',
+    );
+
+    final customerLongitude =
+        double.tryParse(
+      order['customer_longitude']
+              ?.toString() ??
+          '',
+    );
+
     return Card(
       child: Padding(
         padding:
@@ -1101,13 +1272,16 @@ class _DriverScreenState extends State<DriverScreen> {
                 _statusBadge(status),
               ],
             ),
+
             const SizedBox(
               height: 18,
             ),
+
             _infoRow(
               Icons.store,
               restaurant,
             ),
+
             if (restaurantAddress
                 .isNotEmpty) ...[
               const SizedBox(
@@ -1118,13 +1292,16 @@ class _DriverScreenState extends State<DriverScreen> {
                 restaurantAddress,
               ),
             ],
+
             const Divider(
               height: 25,
             ),
+
             _infoRow(
               Icons.person,
               customer,
             ),
+
             if (phone.isNotEmpty) ...[
               const SizedBox(
                 height: 10,
@@ -1134,25 +1311,31 @@ class _DriverScreenState extends State<DriverScreen> {
                 phone,
               ),
             ],
+
             const SizedBox(
               height: 10,
             ),
+
             _infoRow(
               Icons.location_on,
               address,
             ),
+
             const SizedBox(
               height: 15,
             ),
+
             Row(
               children: [
                 const Icon(
                   Icons.payments,
                   color: orange,
                 ),
+
                 const SizedBox(
                   width: 8,
                 ),
+
                 Text(
                   'أجرة السائق: ${fee.toStringAsFixed(3)} د.ت',
                   style:
@@ -1163,22 +1346,41 @@ class _DriverScreenState extends State<DriverScreen> {
                 ),
               ],
             ),
+
             const SizedBox(
               height: 18,
             ),
-            SizedBox(
-              width:
-                  double.infinity,
-              child:
-                  OutlinedButton.icon(
-                onPressed: () {},
-                icon: const Icon(
-                  Icons.map,
+
+            Row(
+              children: [
+                Expanded(
+                  child: MapButton(
+                    title: 'إلى المطعم',
+                    icon:
+                        Icons.restaurant,
+                    latitude:
+                        restaurantLatitude,
+                    longitude:
+                        restaurantLongitude,
+                  ),
                 ),
-                label: const Text(
-                  'فتح الخريطة',
+
+                const SizedBox(
+                  width: 10,
                 ),
-              ),
+
+                Expanded(
+                  child: MapButton(
+                    title: 'إلى الزبون',
+                    icon: Icons
+                        .person_pin_circle,
+                    latitude:
+                        customerLatitude,
+                    longitude:
+                        customerLongitude,
+                  ),
+                ),
+              ],
             ),
           ],
         ),
@@ -1278,9 +1480,11 @@ class _DriverScreenState extends State<DriverScreen> {
           icon,
           color: orange,
         ),
+
         const SizedBox(
           width: 8,
         ),
+
         Expanded(
           child: Text(text),
         ),

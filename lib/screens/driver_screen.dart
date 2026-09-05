@@ -62,7 +62,8 @@ class _DriverScreenState extends State<DriverScreen> {
       _socketService.connect(
         serverUrl: 'http://localhost:3000',
         token: token,
-        driverId: driverId,
+        role: 'driver',
+      );
       );
 
       _socketService.on(

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../services/api_service.dart';
+import '../services/auth_service.dart';
+import '../services/socket_service.dart';
 
 class DriverScreen extends StatefulWidget {
   const DriverScreen({super.key});
@@ -22,11 +24,160 @@ class _DriverScreenState extends State<DriverScreen> {
 
   List<Map<String, dynamic>> orders = [];
 
+  final SocketService _socketService = SocketService();
+
   @override
   void initState() {
     super.initState();
+
     loadData();
+    _initializeSocket();
   }
+
+  // =========================================================
+  // SOCKET INITIALIZATION
+  // =========================================================
+
+  Future<void> _initializeSocket() async {
+    try {
+      final token = await AuthService.getToken();
+      final driverId = await AuthService.getUserId();
+
+      if (token == null ||
+          token.isEmpty ||
+          driverId == null) {
+        return;
+      }
+
+      _socketService.connect(
+        serverUrl: 'http://localhost:3000',
+        token: token,
+        driverId: driverId,
+      );
+
+      _socketService.on(
+        'order_offer',
+        _handleOrderOffer,
+      );
+    } catch (error) {
+      debugPrint(
+        'Socket initialization error: $error',
+      );
+    }
+  }
+
+  // =========================================================
+  // RECEIVE NEW ORDER
+  // =========================================================
+
+  void _handleOrderOffer(dynamic data) {
+    try {
+      if (data == null ||
+          data is! Map) {
+        return;
+      }
+
+      final payload =
+          Map<String, dynamic>.from(data);
+
+      final orderId =
+          payload['order_id'];
+
+      if (orderId == null) {
+        return;
+      }
+
+      final order = <String, dynamic>{
+        'id': orderId,
+        'restaurant_id':
+            payload['restaurant_id'],
+        'restaurant_name':
+            payload['restaurant_name'],
+        'restaurant_address':
+            payload['restaurant_address'],
+        'restaurant_latitude':
+            payload['restaurant_latitude'],
+        'restaurant_longitude':
+            payload['restaurant_longitude'],
+        'customer_name':
+            payload['customer_name'],
+        'customer_phone':
+            payload['customer_phone'],
+        'customer_address':
+            payload['customer_address'],
+        'customer_latitude':
+            payload['customer_latitude'],
+        'customer_longitude':
+            payload['customer_longitude'],
+        'food_amount':
+            payload['food_amount'],
+        'driver_fee':
+            payload['driver_fee'],
+        'status': 'offered',
+        'offer_expires_at':
+            payload['expires_at'],
+      };
+
+      if (!mounted) return;
+
+      setState(() {
+        orders.removeWhere(
+          (existingOrder) =>
+              existingOrder['id']
+                  ?.toString() ==
+              orderId.toString(),
+        );
+
+        orders.insert(
+          0,
+          order,
+        );
+      });
+
+      _showNewOrderNotification();
+    } catch (error) {
+      debugPrint(
+        'Order offer handling error: $error',
+      );
+    }
+  }
+
+  // =========================================================
+  // NEW ORDER MESSAGE
+  // =========================================================
+
+  void _showNewOrderNotification() {
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        const SnackBar(
+          content: Row(
+            children: [
+              Icon(
+                Icons.delivery_dining,
+                color: Colors.white,
+              ),
+              SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  '🚨 وصل طلب توصيل جديد',
+                ),
+              ),
+            ],
+          ),
+          duration:
+              Duration(seconds: 4),
+          backgroundColor:
+              orange,
+        ),
+      );
+  }
+
+  // =========================================================
+  // LOAD DATA
+  // =========================================================
 
   Future<void> loadData() async {
     if (!mounted) return;
@@ -37,10 +188,14 @@ class _DriverScreenState extends State<DriverScreen> {
 
     try {
       final profileResponse =
-          await ApiService.get('/driver/profile');
+          await ApiService.get(
+        '/driver/profile',
+      );
 
       final ordersResponse =
-          await ApiService.get('/driver/orders');
+          await ApiService.get(
+        '/driver/orders',
+      );
 
       if (!mounted) return;
 
@@ -56,7 +211,9 @@ class _DriverScreenState extends State<DriverScreen> {
           List<Map<String, dynamic>>.from(
         rawOrders.map(
           (order) =>
-              Map<String, dynamic>.from(order),
+              Map<String, dynamic>.from(
+            order,
+          ),
         ),
       );
 
@@ -80,6 +237,10 @@ class _DriverScreenState extends State<DriverScreen> {
       _showError(error);
     }
   }
+
+  // =========================================================
+  // ONLINE STATUS
+  // =========================================================
 
   Future<void> updateOnlineStatus(
     bool value,
@@ -130,6 +291,10 @@ class _DriverScreenState extends State<DriverScreen> {
     }
   }
 
+  // =========================================================
+  // CURRENT ORDER
+  // =========================================================
+
   Map<String, dynamic>? get currentOrder {
     for (final order in orders) {
       final status =
@@ -150,13 +315,19 @@ class _DriverScreenState extends State<DriverScreen> {
     return null;
   }
 
+  // =========================================================
+  // TODAY ORDERS
+  // =========================================================
+
   int get todayOrdersCount {
     final now = DateTime.now();
 
     return orders.where((order) {
       final date =
           DateTime.tryParse(
-        order['created_at']?.toString() ?? '',
+        order['created_at']
+                ?.toString() ??
+            '',
       );
 
       if (date == null) {
@@ -169,6 +340,10 @@ class _DriverScreenState extends State<DriverScreen> {
     }).length;
   }
 
+  // =========================================================
+  // TODAY INCOME
+  // =========================================================
+
   double get todayIncome {
     final now = DateTime.now();
 
@@ -177,7 +352,9 @@ class _DriverScreenState extends State<DriverScreen> {
     for (final order in orders) {
       final date =
           DateTime.tryParse(
-        order['created_at']?.toString() ?? '',
+        order['created_at']
+                ?.toString() ??
+            '',
       );
 
       if (date == null) {
@@ -208,6 +385,10 @@ class _DriverScreenState extends State<DriverScreen> {
 
     return total;
   }
+
+  // =========================================================
+  // ACCEPT ORDER
+  // =========================================================
 
   Future<void> acceptOrder(
     Map<String, dynamic> order,
@@ -263,6 +444,10 @@ class _DriverScreenState extends State<DriverScreen> {
     }
   }
 
+  // =========================================================
+  // REJECT ORDER
+  // =========================================================
+
   Future<void> rejectOrder(
     Map<String, dynamic> order,
   ) async {
@@ -316,6 +501,21 @@ class _DriverScreenState extends State<DriverScreen> {
       });
     }
   }
+
+  // =========================================================
+  // DISPOSE
+  // =========================================================
+
+  @override
+  void dispose() {
+    _socketService.disconnect();
+
+    super.dispose();
+  }
+
+  // =========================================================
+  // BUILD
+  // =========================================================
 
   @override
   Widget build(
@@ -430,6 +630,10 @@ class _DriverScreenState extends State<DriverScreen> {
     );
   }
 
+  // =========================================================
+  // STATUS CARD
+  // =========================================================
+
   Widget _statusCard() {
     return Card(
       child: Padding(
@@ -485,6 +689,10 @@ class _DriverScreenState extends State<DriverScreen> {
     );
   }
 
+  // =========================================================
+  // STAT
+  // =========================================================
+
   Widget _stat(
     IconData icon,
     String title,
@@ -529,6 +737,10 @@ class _DriverScreenState extends State<DriverScreen> {
       ),
     );
   }
+
+  // =========================================================
+  // CURRENT ORDER
+  // =========================================================
 
   Widget _currentOrder() {
     final order = currentOrder;
@@ -581,6 +793,10 @@ class _DriverScreenState extends State<DriverScreen> {
 
     return _acceptedOrderCard(order);
   }
+
+  // =========================================================
+  // OFFER CARD
+  // =========================================================
 
   Widget _offerCard(
     Map<String, dynamic> order,
@@ -808,6 +1024,10 @@ class _DriverScreenState extends State<DriverScreen> {
     );
   }
 
+  // =========================================================
+  // ACCEPTED ORDER CARD
+  // =========================================================
+
   Widget _acceptedOrderCard(
     Map<String, dynamic> order,
   ) {
@@ -966,6 +1186,10 @@ class _DriverScreenState extends State<DriverScreen> {
     );
   }
 
+  // =========================================================
+  // ORDERS HISTORY
+  // =========================================================
+
   Widget _ordersHistory() {
     if (orders.isEmpty) {
       return Card(
@@ -1038,6 +1262,10 @@ class _DriverScreenState extends State<DriverScreen> {
     );
   }
 
+  // =========================================================
+  // INFO ROW
+  // =========================================================
+
   Widget _infoRow(
     IconData icon,
     String text,
@@ -1059,6 +1287,10 @@ class _DriverScreenState extends State<DriverScreen> {
       ],
     );
   }
+
+  // =========================================================
+  // STATUS BADGE
+  // =========================================================
 
   Widget _statusBadge(
     String status,
@@ -1133,6 +1365,10 @@ class _DriverScreenState extends State<DriverScreen> {
       ),
     );
   }
+
+  // =========================================================
+  // MESSAGES
+  // =========================================================
 
   void _showMessage(
     String message,

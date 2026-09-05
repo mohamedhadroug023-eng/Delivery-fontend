@@ -1,8 +1,10 @@
+
 const express = require("express");
 
 const {
   getProfile,
-  updateOnlineStatus
+  updateOnlineStatus,
+  updateLocation
 } = require("../controllers/driver.controller");
 
 const {
@@ -34,6 +36,18 @@ router.patch(
   authenticate,
   authorize("driver"),
   updateOnlineStatus
+);
+
+// =========================================================
+// DRIVER LOCATION
+// =========================================================
+
+// PATCH /api/driver/location
+router.patch(
+  "/location",
+  authenticate,
+  authorize("driver"),
+  updateLocation
 );
 
 module.exports = router;

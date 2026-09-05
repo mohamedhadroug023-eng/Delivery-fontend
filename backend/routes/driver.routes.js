@@ -1,10 +1,11 @@
-
 const express = require("express");
 
 const {
   getProfile,
   updateOnlineStatus,
-  updateLocation
+  updateLocation,
+  acceptOrderOffer,
+  rejectOrderOffer
 } = require("../controllers/driver.controller");
 
 const {
@@ -48,6 +49,30 @@ router.patch(
   authenticate,
   authorize("driver"),
   updateLocation
+);
+
+// =========================================================
+// ACCEPT ORDER OFFER
+// =========================================================
+
+// POST /api/driver/orders/accept
+router.post(
+  "/orders/accept",
+  authenticate,
+  authorize("driver"),
+  acceptOrderOffer
+);
+
+// =========================================================
+// REJECT ORDER OFFER
+// =========================================================
+
+// POST /api/driver/orders/reject
+router.post(
+  "/orders/reject",
+  authenticate,
+  authorize("driver"),
+  rejectOrderOffer
 );
 
 module.exports = router;

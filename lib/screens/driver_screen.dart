@@ -33,6 +33,9 @@ class _DriverScreenState extends State<DriverScreen> {
 
   StreamSubscription<Position>? _locationSubscription;
 
+  Timer? _offerTimer;
+  int offerSecondsRemaining = 0;
+
   @override
   void initState() {
     super.initState();
@@ -141,11 +144,71 @@ class _DriverScreenState extends State<DriverScreen> {
       });
 
       _showNewOrderNotification();
+
+      _startOfferCountdown(
+        order['offer_expires_at'],
+      );
     } catch (error) {
       debugPrint(
         'Order offer handling error: $error',
       );
     }
+  }
+
+  // =========================================================
+  // OFFER COUNTDOWN
+  // =========================================================
+
+  void _startOfferCountdown(
+    dynamic expiresAt,
+  ) {
+    _offerTimer?.cancel();
+
+    final expires =
+        DateTime.tryParse(
+      expiresAt?.toString() ?? '',
+    );
+
+    if (expires == null) {
+      return;
+    }
+
+    void updateCountdown() {
+      final remaining =
+          expires
+              .difference(DateTime.now())
+              .inSeconds;
+
+      if (!mounted) return;
+
+      if (remaining <= 0) {
+        _offerTimer?.cancel();
+
+        setState(() {
+          offerSecondsRemaining = 0;
+
+          orders.removeWhere(
+            (order) =>
+                order['status'] ==
+                'offered',
+          );
+        });
+
+        return;
+      }
+
+      setState(() {
+        offerSecondsRemaining =
+            remaining;
+      });
+    }
+
+    updateCountdown();
+
+    _offerTimer = Timer.periodic(
+      const Duration(seconds: 1),
+      (_) => updateCountdown(),
+    );
   }
 
   // =========================================================
@@ -527,6 +590,12 @@ class _DriverScreenState extends State<DriverScreen> {
         );
       }
 
+      _offerTimer?.cancel();
+
+      setState(() {
+        offerSecondsRemaining = 0;
+      });
+
       _showMessage(
         'تم قبول الطلب بنجاح',
       );
@@ -585,6 +654,12 @@ class _DriverScreenState extends State<DriverScreen> {
         );
       }
 
+      _offerTimer?.cancel();
+
+      setState(() {
+        offerSecondsRemaining = 0;
+      });
+
       _showMessage(
         'تم رفض الطلب',
       );
@@ -609,6 +684,8 @@ class _DriverScreenState extends State<DriverScreen> {
 
   @override
   void dispose() {
+    _offerTimer?.cancel();
+
     _locationSubscription?.cancel();
 
     _socketService.disconnect();
@@ -980,6 +1057,45 @@ class _DriverScreenState extends State<DriverScreen> {
             const SizedBox(
               height: 15,
             ),
+            Container(
+              width: double.infinity,
+              padding:
+                  const EdgeInsets.all(12),
+              decoration:
+                  BoxDecoration(
+                color:
+                    orange.withOpacity(.1),
+                borderRadius:
+                    BorderRadius.circular(12),
+              ),
+              child: Row(
+                mainAxisAlignment:
+                    MainAxisAlignment.center,
+                children: [
+                  const Icon(
+                    Icons.timer,
+                    color: orange,
+                  ),
+                  const SizedBox(
+                    width: 8,
+                  ),
+                  Text(
+                    'الوقت المتبقي: '
+                    '$offerSecondsRemaining ثانية',
+                    style:
+                        const TextStyle(
+                      color: orange,
+                      fontWeight:
+                          FontWeight.bold,
+                      fontSize: 16,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(
+              height: 15,
+            ),
             _infoRow(
               Icons.store,
               restaurant,
@@ -1021,7 +1137,8 @@ class _DriverScreenState extends State<DriverScreen> {
                   width: 8,
                 ),
                 Text(
-                  'أجرة السائق: ${fee.toStringAsFixed(3)} د.ت',
+                  'أجرة السائق: '
+                  '${fee.toStringAsFixed(3)} د.ت',
                   style:
                       const TextStyle(
                     fontWeight:
@@ -1283,7 +1400,8 @@ class _DriverScreenState extends State<DriverScreen> {
                   width: 8,
                 ),
                 Text(
-                  'أجرة السائق: ${fee.toStringAsFixed(3)} د.ت',
+                  'أجرة السائق: '
+                  '${fee.toStringAsFixed(3)} د.ت',
                   style:
                       const TextStyle(
                     fontWeight:
@@ -1295,11 +1413,6 @@ class _DriverScreenState extends State<DriverScreen> {
             const SizedBox(
               height: 18,
             ),
-
-            // =================================================
-            // GOOGLE MAPS
-            // =================================================
-
             Row(
               children: [
                 Expanded(
@@ -1401,7 +1514,8 @@ class _DriverScreenState extends State<DriverScreen> {
               '#$id - $customer',
             ),
             subtitle: Text(
-              'أجرة السائق: ${fee.toStringAsFixed(3)} د.ت',
+              'أجرة السائق: '
+              '${fee.toStringAsFixed(3)} د.ت',
             ),
             trailing:
                 _statusBadge(status),

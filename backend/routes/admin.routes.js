@@ -4,7 +4,9 @@ const {
   getDashboard,
   getRestaurants,
   getDrivers,
-  getOrders
+  getOrders,
+  updateRestaurantStatus,
+  updateDriverStatus
 } = require("../controllers/admin.controller");
 
 const {
@@ -14,9 +16,9 @@ const {
 
 const router = express.Router();
 
-// =============================
-// ADMIN DASHBOARD
-// =============================
+/* =========================================================
+   DASHBOARD
+========================================================= */
 
 router.get(
   "/dashboard",
@@ -25,9 +27,10 @@ router.get(
   getDashboard
 );
 
-// =============================
-// RESTAURANTS
-// =============================
+
+/* =========================================================
+   RESTAURANTS
+========================================================= */
 
 router.get(
   "/restaurants",
@@ -36,9 +39,17 @@ router.get(
   getRestaurants
 );
 
-// =============================
-// DRIVERS
-// =============================
+router.patch(
+  "/restaurants/:id/status",
+  authenticate,
+  authorize("admin"),
+  updateRestaurantStatus
+);
+
+
+/* =========================================================
+   DRIVERS
+========================================================= */
 
 router.get(
   "/drivers",
@@ -47,9 +58,17 @@ router.get(
   getDrivers
 );
 
-// =============================
-// ALL ORDERS
-// =============================
+router.patch(
+  "/drivers/:id/status",
+  authenticate,
+  authorize("admin"),
+  updateDriverStatus
+);
+
+
+/* =========================================================
+   ORDERS
+========================================================= */
 
 router.get(
   "/orders",
@@ -57,5 +76,6 @@ router.get(
   authorize("admin"),
   getOrders
 );
+
 
 module.exports = router;

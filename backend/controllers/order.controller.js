@@ -1,5 +1,9 @@
 const pool = require("../config/database");
 
+const {
+  sendOrderOffer
+} = require("../services/dispatch.service");
+
 // =========================================================
 // CREATE DELIVERY ORDER
 // =========================================================
@@ -43,6 +47,19 @@ async function createOrder(req, res, next) {
       return res.status(400).json({
         success: false,
         message: "Invalid order data"
+      });
+    }
+
+    if (
+      driver_fee !== undefined &&
+      (
+        Number.isNaN(Number(driver_fee)) ||
+        Number(driver_fee) < 0
+      )
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid driver fee"
       });
     }
 
@@ -133,7 +150,10 @@ async function createOrder(req, res, next) {
       SET balance_due = balance_due + ?
       WHERE id = ?
       `,
-      [hadrougFee, restaurant.id]
+      [
+        hadrougFee,
+        restaurant.id
+      ]
     );
 
     // -------------------------------------------------------
@@ -185,16 +205,41 @@ async function createOrder(req, res, next) {
       ]
     );
 
+    // -------------------------------------------------------
+    // COMMIT DATABASE TRANSACTION
+    // -------------------------------------------------------
+
     await connection.commit();
+
+    // -------------------------------------------------------
+    // START DRIVER DISPATCH
+    // -------------------------------------------------------
+
+    const dispatchResult = await sendOrderOffer(
+      result.insertId
+    );
+
+    // -------------------------------------------------------
+    // RESPONSE
+    // -------------------------------------------------------
 
     return res.status(201).json({
       success: true,
       message: "Order created successfully",
-      order_id: result.insertId
+      order_id: result.insertId,
+      dispatch: dispatchResult
     });
 
   } catch (error) {
-    await connection.rollback();
+    try {
+      await connection.rollback();
+    } catch (rollbackError) {
+      console.error(
+        "Rollback error:",
+        rollbackError
+      );
+    }
+
     next(error);
 
   } finally {

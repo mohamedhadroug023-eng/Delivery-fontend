@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 
+import '../services/api_service.dart';
+import '../services/auth_service.dart';
+
 import 'restaurant_screen.dart';
 import 'driver_screen.dart';
 import 'admin_screen.dart';
@@ -36,9 +39,11 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
-  void login() async {
-    if (phoneController.text.trim().isEmpty ||
-        passwordController.text.trim().isEmpty) {
+  Future<void> login() async {
+    final phone = phoneController.text.trim();
+    final password = passwordController.text;
+
+    if (phone.isEmpty || password.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('يرجى إدخال جميع البيانات'),
@@ -51,39 +56,101 @@ class _LoginScreenState extends State<LoginScreen> {
       loading = true;
     });
 
-    await Future.delayed(const Duration(seconds: 1));
+    try {
+      final response = await ApiService.post(
+        '/auth/login',
+        {
+          'phone': phone,
+          'password': password,
+        },
+      );
 
-    if (!mounted) return;
+      if (!mounted) return;
 
-    setState(() {
-      loading = false;
-    });
+      if (response['success'] != true) {
+        throw Exception(
+          response['message'] ?? 'فشل تسجيل الدخول',
+        );
+      }
 
-    Widget screen;
+      final token = response['token'];
+      final user = response['user'];
 
-    switch (widget.role) {
-      case 'restaurant':
-        screen = const RestaurantScreen();
-        break;
+      if (token == null || user == null) {
+        throw Exception('استجابة غير صحيحة من الخادم');
+      }
 
-      case 'driver':
-        screen = const DriverScreen();
-        break;
+      final serverRole = user['role'];
+      final userId = user['id'];
 
-      case 'admin':
-        screen = const AdminScreen();
-        break;
+      if (serverRole != widget.role) {
+        throw Exception(
+          'هذا الحساب لا ينتمي إلى قسم ${title}',
+        );
+      }
 
-      default:
-        screen = const RestaurantScreen();
+      await AuthService.saveSession(
+        token: token.toString(),
+        role: serverRole.toString(),
+        userId: int.parse(userId.toString()),
+      );
+
+      if (!mounted) return;
+
+      Widget screen;
+
+      switch (serverRole) {
+        case 'restaurant':
+          screen = const RestaurantScreen();
+          break;
+
+        case 'driver':
+          screen = const DriverScreen();
+          break;
+
+        case 'admin':
+          screen = const AdminScreen();
+          break;
+
+        default:
+          throw Exception('نوع حساب غير معروف');
+      }
+
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (_) => screen,
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+
+      String message = error.toString();
+
+      if (message.startsWith('Exception: ')) {
+        message = message.substring(11);
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(message),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          loading = false;
+        });
+      }
     }
+  }
 
-    Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(
-        builder: (_) => screen,
-      ),
-    );
+  @override
+  void dispose() {
+    phoneController.dispose();
+    passwordController.dispose();
+    super.dispose();
   }
 
   @override
@@ -96,7 +163,6 @@ class _LoginScreenState extends State<LoginScreen> {
         padding: const EdgeInsets.all(24),
         child: Column(
           children: [
-
             const SizedBox(height: 30),
 
             const Icon(
@@ -154,8 +220,13 @@ class _LoginScreenState extends State<LoginScreen> {
             ElevatedButton(
               onPressed: loading ? null : login,
               child: loading
-                  ? const CircularProgressIndicator(
-                      color: Colors.white,
+                  ? const SizedBox(
+                      width: 24,
+                      height: 24,
+                      child: CircularProgressIndicator(
+                        color: Colors.white,
+                        strokeWidth: 2.5,
+                      ),
                     )
                   : const Text(
                       'تسجيل الدخول',
@@ -169,7 +240,15 @@ class _LoginScreenState extends State<LoginScreen> {
             const SizedBox(height: 20),
 
             TextButton(
-              onPressed: () {},
+              onPressed: () {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text(
+                      'استعادة كلمة المرور ستكون متاحة لاحقًا',
+                    ),
+                  ),
+                );
+              },
               child: const Text(
                 'نسيت كلمة المرور؟',
               ),

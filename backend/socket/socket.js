@@ -1,282 +1,127 @@
-const jwt = require("jsonwebtoken");
+import 'package:socket_io_client/socket_io_client.dart'
+    as io;
 
-const pool = require("../config/database");
+class SocketService {
+  io.Socket? _socket;
 
-const {
-  initializeNotificationService
-} = require("../services/notification.service");
+  bool get isConnected =>
+      _socket?.connected ?? false;
 
+  /* =======================================================
+     CONNECT
+  ======================================================= */
 
-/* =========================================================
-   SOCKET INITIALIZATION
-========================================================= */
+  void connect({
+    required String serverUrl,
+    required String token,
+    String? role,
+  }) {
+    disconnect();
 
-function initializeSocket(io) {
+    _socket = io.io(
+      serverUrl,
+      io.OptionBuilder()
+          .setTransports(['websocket'])
+          .setAuth({
+            'token': token,
+          })
+          .disableAutoConnect()
+          .enableReconnection()
+          .setReconnectionAttempts(10)
+          .setReconnectionDelay(1000)
+          .build(),
+    );
 
-  initializeNotificationService(io);
+    _socket!.onConnect((_) {
+      print(
+        'Socket connected: ${_socket!.id}',
+      );
+
+      /*
+       * Backend already identifies the user
+       * from the JWT token.
+       *
+       * No driverId / restaurantId is trusted
+       * from the client.
+       */
+
+      if (role == 'driver') {
+        _socket!.emit('driver_join');
+      }
+    });
+
+    _socket!.onDisconnect((_) {
+      print(
+        'Socket disconnected',
+      );
+    });
+
+    _socket!.onConnectError((error) {
+      print(
+        'Socket connection error: $error',
+      );
+    });
+
+    _socket!.onError((error) {
+      print(
+        'Socket error: $error',
+      );
+    });
+
+    _socket!.connect();
+  }
 
 
   /* =======================================================
-     SOCKET AUTHENTICATION
+     LISTEN
   ======================================================= */
 
-  io.use(async (socket, next) => {
-    try {
-
-      const token =
-        socket.handshake.auth?.token;
-
-      if (!token) {
-        return next(
-          new Error(
-            "Authentication required"
-          )
-        );
-      }
-
-
-      const decoded =
-        jwt.verify(
-          token,
-          process.env.JWT_SECRET
-        );
-
-
-      /* =====================================================
-         DRIVER
-      ===================================================== */
-
-      if (decoded.role === "driver") {
-
-        const [drivers] =
-          await pool.execute(
-            `
-            SELECT
-              id,
-              user_id
-            FROM drivers
-            WHERE user_id = ?
-            LIMIT 1
-            `,
-            [decoded.id]
-          );
-
-
-        if (drivers.length === 0) {
-          return next(
-            new Error(
-              "Driver profile not found"
-            )
-          );
-        }
-
-
-        socket.user = decoded;
-
-        socket.driver = {
-          id: drivers[0].id,
-          user_id: drivers[0].user_id
-        };
-
-
-        return next();
-      }
-
-
-      /* =====================================================
-         RESTAURANT
-      ===================================================== */
-
-      if (decoded.role === "restaurant") {
-
-        const [restaurants] =
-          await pool.execute(
-            `
-            SELECT
-              id,
-              user_id
-            FROM restaurants
-            WHERE user_id = ?
-            LIMIT 1
-            `,
-            [decoded.id]
-          );
-
-
-        if (restaurants.length === 0) {
-          return next(
-            new Error(
-              "Restaurant profile not found"
-            )
-          );
-        }
-
-
-        socket.user = decoded;
-
-        socket.restaurant = {
-          id: restaurants[0].id,
-          user_id:
-            restaurants[0].user_id
-        };
-
-
-        return next();
-      }
-
-
-      /* =====================================================
-         ADMIN
-      ===================================================== */
-
-      if (decoded.role === "admin") {
-
-        socket.user = decoded;
-
-        return next();
-      }
-
-
-      return next(
-        new Error(
-          "Invalid user role"
-        )
-      );
-
-    } catch (error) {
-
-      console.error(
-        "Socket authentication error:",
-        error
-      );
-
-      return next(
-        new Error(
-          "Invalid or expired token"
-        )
-      );
-    }
-  });
-
-
-  /* =========================================================
-     CONNECTION
-  ========================================================= */
-
-  io.on(
-    "connection",
-    (socket) => {
-
-      console.log(
-        `Socket connected: ${socket.id} - ` +
-        `User ${socket.user.id} - ` +
-        `Role ${socket.user.role}`
-      );
-
-
-      /* =====================================================
-         DRIVER
-      ===================================================== */
-
-      if (
-        socket.user.role ===
-        "driver"
-      ) {
-
-        const driverId =
-          socket.driver.id;
-
-
-        socket.join(
-          `driver_${driverId}`
-        );
-
-
-        console.log(
-          `Driver ${driverId} joined room`
-        );
-
-
-        socket.on(
-          "driver_join",
-          () => {
-
-            socket.join(
-              `driver_${driverId}`
-            );
-
-            console.log(
-              `Driver ${driverId} joined socket room`
-            );
-          }
-        );
-      }
-
-
-      /* =====================================================
-         RESTAURANT
-      ===================================================== */
-
-      if (
-        socket.user.role ===
-        "restaurant"
-      ) {
-
-        const restaurantId =
-          socket.restaurant.id;
-
-
-        socket.join(
-          `restaurant_${restaurantId}`
-        );
-
-
-        console.log(
-          `Restaurant ${restaurantId} joined room`
-        );
-      }
-
-
-      /* =====================================================
-         ADMIN
-      ===================================================== */
-
-      if (
-        socket.user.role ===
-        "admin"
-      ) {
-
-        socket.join(
-          "admins"
-        );
-
-
-        console.log(
-          `Admin ${socket.user.id} joined admin room`
-        );
-      }
-
-
-      /* =====================================================
-         DISCONNECT
-      ===================================================== */
-
-      socket.on(
-        "disconnect",
-        () => {
-
-          console.log(
-            `Socket disconnected: ${socket.id} - ` +
-            `User ${socket.user.id} - ` +
-            `Role ${socket.user.role}`
-          );
-        }
-      );
-    }
-  );
+  void on(
+    String event,
+    Function(dynamic data) callback,
+  ) {
+    _socket?.off(event);
+
+    _socket?.on(
+      event,
+      callback,
+    );
+  }
+
+
+  /* =======================================================
+     REMOVE LISTENER
+  ======================================================= */
+
+  void off(
+    String event,
+  ) {
+    _socket?.off(event);
+  }
+
+
+  /* =======================================================
+     EMIT
+  ======================================================= */
+
+  void emit(
+    String event,
+    dynamic data,
+  ) {
+    _socket?.emit(
+      event,
+      data,
+    );
+  }
+
+
+  /* =======================================================
+     DISCONNECT
+  ======================================================= */
+
+  void disconnect() {
+    _socket?.disconnect();
+    _socket?.dispose();
+    _socket = null;
+  }
 }
-
-
-module.exports = {
-  initializeSocket
-};

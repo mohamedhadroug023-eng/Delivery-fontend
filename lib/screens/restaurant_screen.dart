@@ -106,6 +106,174 @@ class _RestaurantScreenState
   }
 
   // =========================================================
+  // CREATE ORDER DIALOG (B2B)
+  // =========================================================
+
+  void _showCreateOrderDialog() {
+    final nameController = TextEditingController();
+    final phoneController = TextEditingController();
+    final addressController = TextEditingController();
+    final foodAmountController = TextEditingController();
+    final driverFeeController = TextEditingController(text: '3.000');
+    
+    // إحداثيات افتراضية (مثلاً مركز سوسة أو إحداثيات مؤقتة إذا لم يتم تحديدها بدقة)
+    final latController = TextEditingController(text: '35.8256');
+    final lngController = TextEditingController(text: '10.6369');
+
+    bool creating = false;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: const Row(
+                children: [
+                  Icon(Icons.add_shopping_cart, color: Colors.blue),
+                  SizedBox(width: 10),
+                  Text('إنشاء طلب جديد (B2B)'),
+                ],
+              ),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextField(
+                      controller: nameController,
+                      decoration: const InputDecoration(
+                        labelText: 'اسم الحريف (الزبون)',
+                        prefixIcon: Icon(Icons.person_outline),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: phoneController,
+                      keyboardType: TextInputType.phone,
+                      decoration: const InputDecoration(
+                        labelText: 'هاتف الحريف',
+                        prefixIcon: Icon(Icons.phone_outlined),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: addressController,
+                      decoration: const InputDecoration(
+                        labelText: 'عنوان التوصيل',
+                        prefixIcon: Icon(Icons.location_on_outlined),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: foodAmountController,
+                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      decoration: const InputDecoration(
+                        labelText: 'قيمة الأكل (د.ت)',
+                        prefixIcon: Icon(Icons.attach_money),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: driverFeeController,
+                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      decoration: const InputDecoration(
+                        labelText: 'أجرة السائق (د.ت)',
+                        prefixIcon: Icon(Icons.delivery_dining),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: creating ? null : () => Navigator.pop(dialogContext),
+                  child: const Text('إلغاء'),
+                ),
+                ElevatedButton(
+                  onPressed: creating
+                      ? null
+                      : () async {
+                          final name = nameController.text.trim();
+                          final phone = phoneController.text.trim();
+                          final address = addressController.text.trim();
+                          final foodAmount = double.tryParse(foodAmountController.text) ?? 0;
+                          final driverFee = double.tryParse(driverFeeController.text) ?? 0;
+                          final lat = double.tryParse(latController.text) ?? 35.8256;
+                          final lng = double.tryParse(lngController.text) ?? 10.6369;
+
+                          if (address.isEmpty || foodAmount <= 0) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('الرجاء إدخال العنوان وقيمة الأكل على الأقل'),
+                                backgroundColor: Colors.red,
+                              ),
+                            );
+                            return;
+                          }
+
+                          setDialogState(() {
+                            creating = true;
+                          });
+
+                          try {
+                            await ApiService.post(
+                              '/restaurant/orders',
+                              {
+                                'customer_name': name.isEmpty ? null : name,
+                                'customer_phone': phone.isEmpty ? null : phone,
+                                'customer_address': address,
+                                'customer_latitude': lat,
+                                'customer_longitude': lng,
+                                'food_amount': foodAmount,
+                                'driver_fee': driverFee,
+                              },
+                            );
+
+                            if (!dialogContext.mounted) return;
+                            Navigator.pop(dialogContext);
+
+                            await loadData();
+
+                            showMessage('✅ تم إنشاء الطلب بنجاح وبدأ البحث عن سائق');
+                          } catch (error) {
+                            if (!dialogContext.mounted) return;
+                            setDialogState(() {
+                              creating = false;
+                            });
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(_cleanError(error)),
+                                backgroundColor: Colors.red,
+                              ),
+                            );
+                          }
+                        },
+                  child: creating
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Text('إنشاء الطلب'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    ).then((_) {
+      nameController.dispose();
+      phoneController.dispose();
+      addressController.dispose();
+      foodAmountController.dispose();
+      driverFeeController.dispose();
+      latController.dispose();
+      lngController.dispose();
+    });
+  }
+
+  // =========================================================
   // SOCKET
   // =========================================================
 
@@ -180,7 +348,6 @@ class _RestaurantScreenState
       },
     );
 
-    // Socket connection status
     Future.delayed(
       const Duration(seconds: 2),
       () {
@@ -1158,6 +1325,17 @@ class _RestaurantScreenState
         ],
       ),
 
+      // زر إنشاء طلب جديد عائم مخصص لنظام B2B
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: _showCreateOrderDialog,
+        backgroundColor: const Color(0xFF111827),
+        icon: const Icon(Icons.add, color: Colors.white),
+        label: const Text(
+          'طلب جديد',
+          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+        ),
+      ),
+
       drawer: Drawer(
         child: SafeArea(
           child: Column(
@@ -1217,6 +1395,21 @@ class _RestaurantScreenState
                   Navigator.pop(
                     context,
                   );
+                },
+              ),
+
+              ListTile(
+                leading:
+                    const Icon(
+                  Icons.add_shopping_cart,
+                ),
+                title:
+                    const Text(
+                  'إنشاء طلب جديد',
+                ),
+                onTap: () {
+                  Navigator.pop(context);
+                  _showCreateOrderDialog();
                 },
               ),
 

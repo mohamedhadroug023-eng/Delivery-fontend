@@ -51,11 +51,8 @@ class _DriverScreenState extends State<DriverScreen> {
   Future<void> _initializeSocket() async {
     try {
       final token = await AuthService.getToken();
-      final driverId = await AuthService.getUserId();
 
-      if (token == null ||
-          token.isEmpty ||
-          driverId == null) {
+      if (token == null || token.isEmpty) {
         return;
       }
 
@@ -64,7 +61,6 @@ class _DriverScreenState extends State<DriverScreen> {
         token: token,
         role: 'driver',
       );
-
 
       _socketService.on(
         'order_offer',
@@ -1291,10 +1287,6 @@ class _DriverScreenState extends State<DriverScreen> {
             ) ??
             0;
 
-    final status =
-        order['status']?.toString() ??
-            '';
-
     final restaurantLatitude =
         double.tryParse(
       order['restaurant_latitude']
@@ -1345,7 +1337,7 @@ class _DriverScreenState extends State<DriverScreen> {
                     fontSize: 17,
                   ),
                 ),
-                _statusBadge(status),
+                _statusBadge(order['status']?.toString() ?? ''),
               ],
             ),
             const SizedBox(
@@ -1455,16 +1447,16 @@ class _DriverScreenState extends State<DriverScreen> {
 
   Widget _ordersHistory() {
     if (orders.isEmpty) {
-      return Card(
+      return const Card(
         child: ListTile(
-          leading: const Icon(
+          leading: Icon(
             Icons.history,
             color: orange,
           ),
-          title: const Text(
+          title: Text(
             'لا توجد طلبات',
           ),
-          subtitle: const Text(
+          subtitle: Text(
             'ستظهر طلباتك هنا',
           ),
         ),

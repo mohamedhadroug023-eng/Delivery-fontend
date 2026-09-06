@@ -75,6 +75,80 @@ async function login(req, res, next) {
   }
 }
 
+// =========================================================
+// REGISTER
+// =========================================================
+
+async function register(req, res, next) {
+  const connection = await pool.getConnection();
+  try {
+    await connection.beginTransaction();
+
+    const { full_name, phone, email, password, role, restaurant_name, address } = req.body;
+
+    if (!phone || !password || !role || !full_name) {
+      return res.status(400).json({
+        success: false,
+        message: "الرجاء إدخال الحقول الإجبارية (الاسم، الهاتف، كلمة المرور، والدور)"
+      });
+    }
+
+    // التحقق هل رقم الهاتف مسجل مسبقاً
+    const [existingUsers] = await connection.execute(
+      `SELECT id FROM users WHERE phone = ? LIMIT 1`,
+      [phone]
+    );
+
+    if (existingUsers.length > 0) {
+      return res.status(400).json({
+        success: false,
+        message: "رقم الهاتف مستخدم بالفعل"
+      });
+    }
+
+    // تشفير كلمة المرور
+    const saltRounds = 10;
+    const passwordHash = await bcrypt.hash(password, saltRounds);
+
+    // إدخال المستخدم في جدول users الأساسي
+    const [userResult] = await connection.execute(
+      `INSERT INTO users (full_name, phone, email, password_hash, role, is_active) VALUES (?, ?, ?, ?, ?, 1)`,
+      [full_name, phone, email || null, passwordHash, role]
+    );
+
+    const userId = userResult.insertId;
+
+    // إذا كان المستخدم مطعماً، نقوم بإضافته لجدول المطاعم
+    if (role === 'restaurant') {
+      await connection.execute(
+        `INSERT INTO restaurants (user_id, name, address, is_open) VALUES (?, ?, ?, 1)`,
+        [userId, restaurant_name || full_name, address || 'غير محدد']
+      );
+    } 
+    // إذا كان المستخدم سائقاً، نقوم بإضافته لجدول السائقين
+    else if (role === 'driver') {
+      await connection.execute(
+        `INSERT INTO drivers (user_id, is_available) VALUES (?, 1)`,
+        [userId]
+      );
+    }
+
+    await connection.commit();
+
+    return res.status(201).json({
+      success: true,
+      message: "تم إنشاء الحساب بنجاح"
+    });
+
+  } catch (error) {
+    await connection.rollback();
+    next(error);
+  } finally {
+    connection.release();
+  }
+}
+
 module.exports = {
-  login
+  login,
+  register
 };

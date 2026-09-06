@@ -6,6 +6,7 @@ import '../services/auth_service.dart';
 import 'restaurant_screen.dart';
 import 'driver_screen.dart';
 import 'admin_screen.dart';
+import 'register_screen.dart'; // استيراد صفحة التسجيل
 
 class LoginScreen extends StatefulWidget {
   final String role;
@@ -219,6 +220,12 @@ class _LoginScreenState extends State<LoginScreen> {
 
             ElevatedButton(
               onPressed: loading ? null : login,
+              style: ElevatedButton.styleFrom(
+                minimumSize: const Size(double.infinity, 52),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
+              ),
               child: loading
                   ? const SizedBox(
                       width: 24,
@@ -252,6 +259,32 @@ class _LoginScreenState extends State<LoginScreen> {
               child: const Text(
                 'نسيت كلمة المرور؟',
               ),
+            ),
+
+            // زر الانتقال لإنشاء الحساب بناءً على الدور المختار
+            const SizedBox(height: 10),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Text('ليس لديك حساب؟'),
+                TextButton(
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => RegisterScreen(role: widget.role),
+                      ),
+                    );
+                  },
+                  child: const Text(
+                    'سجل الآن',
+                    style: TextStyle(
+                      color: Color(0xFFFF6B00),
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ],
             ),
           ],
         ),
